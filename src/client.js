@@ -24,15 +24,17 @@ window.__ModuleLoader__.load({
 		const css = [
 			// === inline quota cell ===
 			".mxu_inline_host{display:inline-flex;position:relative;flex:none;align-items:center;height:28px;margin:0 2px;z-index:1}",
-			".mxu_inline{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;width:70px;min-height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#8b93a1);cursor:pointer;font:inherit;line-height:1;user-select:none;transition:background .14s ease,opacity .14s ease,transform .14s ease}",
+			".mxu_inline{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;width:118px;min-height:28px;padding:0 6px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#8b93a1);cursor:pointer;font:inherit;line-height:1;user-select:none;transition:background .14s ease,opacity .14s ease,transform .14s ease;-webkit-tap-highlight-color:transparent}",
 			".mxu_inline:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}",
 			".mxu_inline:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3,#8ea3ff)}",
 			".mxu_inline:active{transform:scale(.98)}",
 			".mxu_inline[data-busy=true]{background:color-mix(in srgb,#818cf8 12%,transparent)}",
-			".mxu_inline_rows{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:70px}",
-			".mxu_inline_line{display:inline-flex;align-items:center;gap:4px;width:70px;height:6px}",
-			".mxu_inline_label{display:inline-block;width:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:9px;font-weight:600;line-height:10px;text-align:right;letter-spacing:.01em}",
-			".mxu_inline_track{display:block;width:48px;height:6px;border-radius:999px;background:var(--dsw-alias-border-l2,rgba(128,128,128,.28));overflow:hidden}",
+			".mxu_inline_rows{display:inline-flex;flex-direction:column;align-items:stretch;justify-content:center;gap:3px;width:100%}",
+			".mxu_inline_line{display:inline-flex;align-items:center;gap:4px;width:100%;height:6px}",
+			".mxu_inline_label{display:inline-block;width:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:9px;font-weight:600;line-height:10px;text-align:right;letter-spacing:.01em;flex:none}",
+			".mxu_inline_track{display:block;flex:1;min-width:0;height:6px;border-radius:999px;background:var(--dsw-alias-border-l2,rgba(128,128,128,.28));overflow:hidden}",
+			".mxu_inline_reset{display:inline-block;width:34px;flex:none;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:9px;font-weight:600;line-height:10px;text-align:left;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".mxu_inline_reset.muted{opacity:.55}",
 			".mxu_inline_fill{display:block;height:100%;min-width:0;border-radius:inherit;transition:width .45s cubic-bezier(.3,.7,.4,1),background-color .2s ease}",
 			".mxu_inline_fill.ok{background:var(--dsw-alias-state-success-primary,#22c55e)}",
 			".mxu_inline_fill.warn{background:var(--dsw-alias-state-warn-primary,#f59e0b)}",
@@ -41,7 +43,7 @@ window.__ModuleLoader__.load({
 			".mxu_inline_fill.loading{width:55%;background:linear-gradient(90deg,#7c8cff,#a5b4fc,#7c8cff);background-size:200% 100%;animation:mxu_inline_loading 1.4s ease-in-out infinite}",
 			"@keyframes mxu_inline_loading{0%{background-position:100% 0;opacity:.42}50%{opacity:.9}100%{background-position:0 0;opacity:.42}}",
 
-			// === compact tooltip ===
+			// === compact tooltip (desktop: floats above button) ===
 			".mxu_inline_tip{pointer-events:none;position:absolute;right:0;bottom:calc(100% + 7px);width:296px;box-sizing:border-box;padding:12px 13px 10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1,#fff) 18%,transparent);border-radius:13px;background:var(--dsw-alias-bg-overlay,#16181d);color:var(--dsw-alias-label-primary,#e8eaed);box-shadow:0 14px 34px rgba(0,0,0,.28);z-index:1000;line-height:1.35}",
 			".mxu_inline_tip_head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}",
 			".mxu_inline_tip_title{font-size:12px;font-weight:700;letter-spacing:-.01em}",
@@ -63,6 +65,12 @@ window.__ModuleLoader__.load({
 			".mxu_inline_metric{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:2px;color:var(--dsw-alias-label-secondary,#8b93a1);font-size:10px}",
 			".mxu_inline_metric b{color:var(--dsw-alias-label-primary,#f4f6f9);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}",
 			".mxu_inline_hint{margin-top:8px;padding-top:7px;border-top:1px dashed color-mix(in srgb,var(--dsw-alias-border-l1,#fff) 14%,transparent);color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:9.5px;line-height:1.45}",
+
+			// === mobile: tap-toggled bottom sheet ===
+			".mxu_inline_backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;opacity:0;pointer-events:none;transition:opacity .18s ease}",
+			".mxu_inline_backdrop.show{opacity:1;pointer-events:auto}",
+			"@media (max-width:640px){.mxu_inline_tip{position:fixed;left:8px;right:8px;bottom:8px;width:auto;max-height:70vh;overflow:auto;border-radius:16px 16px 12px 12px;padding:14px 14px 12px;pointer-events:auto}.mxu_inline_backdrop{pointer-events:auto}}",
+			"@media (prefers-reduced-motion:reduce){.mxu_inline_backdrop,.mxu_inline{transition:none}}",
 		].join("");
 
 		if (typeof document !== "undefined") {
@@ -107,14 +115,20 @@ window.__ModuleLoader__.load({
 			return Math.round(percent) + "%";
 		}
 
-		function formatCountdown(endAt) {
+		function formatCountdown(endAt, compact) {
 			if (!endAt) return "";
 			const remain = endAt - Date.now();
-			if (remain <= 0) return "已重置";
+			if (remain <= 0) return compact ? "0s" : "已重置";
 			const totalMin = Math.floor(remain / 60000);
 			const days = Math.floor(totalMin / (60 * 24));
 			const hours = Math.floor((totalMin % (60 * 24)) / 60);
 			const mins = totalMin % 60;
+			if (compact) {
+				if (days > 0)  return days + "d" + hours + "h";
+				if (hours > 0) return hours + "h" + mins + "m";
+				if (mins > 0)  return mins + "m";
+				return Math.max(1, Math.floor(remain / 1000)) + "s";
+			}
 			if (days > 0) return days + "天" + hours + "小时";
 			if (hours > 0) return hours + "小时" + mins + "分";
 			if (mins > 0) return mins + "分";
@@ -195,11 +209,14 @@ window.__ModuleLoader__.load({
 			const tone = props.loading ? "muted" : (props.included === false ? "muted" : toneOf(percent));
 			const fillClass = "mxu_inline_fill " + (props.loading ? "loading" : tone);
 			const width = props.loading ? undefined : (props.included === false || percent === undefined ? "0%" : percent + "%");
+			const resetText = props.reset || "";
+			const resetTone = props.loading ? "muted" : (props.included === false ? "muted" : "");
 			return createElement("span", { className: "mxu_inline_line", "aria-hidden": "true" },
 				createElement("span", { className: "mxu_inline_label" }, props.label),
 				createElement("span", { className: "mxu_inline_track" },
 					createElement("span", { className: fillClass, style: width === undefined ? undefined : { width } }),
 				),
+				createElement("span", { className: "mxu_inline_reset" + (resetTone ? " " + resetTone : "") }, resetText),
 			);
 		}
 
@@ -265,6 +282,7 @@ window.__ModuleLoader__.load({
 			void tick;
 			const [hovered, setHovered] = react.useState(false);
 			const [focused, setFocused] = react.useState(false);
+			const [expanded, setExpanded] = react.useState(false);
 			const tooltipId = react.useId();
 
 			if (!enabled) return null;
@@ -275,12 +293,59 @@ window.__ModuleLoader__.load({
 			const model = selected.model;
 			const loading = !data || data.phase === "init";
 			const error = (account && account.error) || (data && data.error);
+			const intervalEndAt = model && model.intervalEndAt;
+			const weeklyEndAt = model && model.weeklyEndAt;
 			const summary = loading
 				? "MiniMax Token Plan 用量读取中"
 				: error && !model
 					? "MiniMax Token Plan 用量异常：" + error
-					: "MiniMax " + (REGION_LABEL[region] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "，7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "；点击刷新";
-			const showTooltip = hovered || focused;
+					: "MiniMax " + (REGION_LABEL[region] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
+			const showDesktopTooltip = hovered || focused;
+			const showExpanded = expanded;
+			const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width:640px)").matches;
+
+			// 移动端：把详情面板 portal 到 document.body，彻底脱离 slot 容器的 transform/overflow 陷阱
+			const usePortal = isMobile && showExpanded;
+			const closeMobile = react.useCallback(() => setExpanded(false), []);
+
+			// useEffect：把详情面板 DOM 直接挂到 body 上（不依赖 react-dom portal）
+			react.useEffect(function () {
+				if (!usePortal) return undefined;
+				const root = document.createElement("div");
+				root.setAttribute("data-minimax-usage-portal", "true");
+				root.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:flex-end;justify-content:center;pointer-events:none";
+				// 背景遮罩
+				const backdrop = document.createElement("div");
+				backdrop.className = "mxu_inline_backdrop show";
+				backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);pointer-events:auto";
+				backdrop.addEventListener("click", closeMobile);
+				// 详情面板（用已存在的 .mxu_inline_tip 样式，移动端自动贴底）
+				const panel = document.createElement("div");
+				panel.className = "mxu_inline_tip";
+				panel.style.pointerEvents = "auto";
+				// 把 DetailPanel 的 React 元素用 render 挂载进来
+				const renderInto = (host) => {
+					host.innerHTML = "";
+					// 用一个轻量子组件把 data/accounts 渲染成 DOM
+					const subs = buildMobileSheet({
+						host,
+						region,
+						accounts,
+						data,
+						busy,
+						onClose: closeMobile,
+					});
+					return subs;
+				};
+				renderInto(panel);
+				root.appendChild(backdrop);
+				root.appendChild(panel);
+				document.body.appendChild(root);
+				return () => {
+					try { document.body.removeChild(root); } catch (_) {}
+				};
+			}, [usePortal, data, accounts, busy, region, closeMobile]);
+
 			return createElement("span", {
 				className: "mxu_inline_host",
 				"data-minimax-usage": "true",
@@ -294,10 +359,14 @@ window.__ModuleLoader__.load({
 					className: "mxu_inline",
 					"aria-label": summary,
 					"aria-busy": busy || loading ? "true" : "false",
-					"aria-describedby": showTooltip ? tooltipId : undefined,
+					"aria-describedby": showDesktopTooltip ? tooltipId : undefined,
+					"aria-expanded": showExpanded ? "true" : (showDesktopTooltip ? "true" : "false"),
 					title: summary,
 					"data-busy": busy ? "true" : undefined,
-					onClick: () => { void load(true); },
+					onClick: () => {
+						setExpanded((v) => !v);
+						void load(true);
+					},
 					onFocus: () => setFocused(true),
 					onBlur: () => setFocused(false),
 				},
@@ -307,16 +376,19 @@ window.__ModuleLoader__.load({
 							percent: model && model.intervalRemainingPercent,
 							included: model && model.included,
 							loading,
+							reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
 						}),
 						createElement(CompactQuotaLine, {
 							label: "7d",
 							percent: model && model.weeklyRemainingPercent,
 							included: model && model.included,
 							loading,
+							reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
 						}),
 					),
 				),
-				showTooltip ? createElement(DetailPanel, {
+				// 桌面：仍走 React 子树渲染浮窗
+				!isMobile && showDesktopTooltip ? createElement(DetailPanel, {
 					id: tooltipId,
 					data,
 					accounts,
@@ -324,6 +396,118 @@ window.__ModuleLoader__.load({
 					region,
 				}) : null,
 			);
+		}
+
+		// 移动端详情面板的纯 DOM 渲染（不依赖 react-dom portal）
+		function buildMobileSheet(opts) {
+			const { host, region, accounts, data, busy, onClose } = opts;
+			const REGION_LABEL_LOC = REGION_LABEL;
+			const root = document.createElement("div");
+			root.style.cssText = "display:flex;flex-direction:column;gap:0";
+
+			// header
+			const head = document.createElement("div");
+			head.className = "mxu_inline_tip_head";
+			const headLeft = document.createElement("div");
+			const title = document.createElement("div");
+			title.className = "mxu_inline_tip_title";
+			title.textContent = "MiniMax Token Plan";
+			const sub = document.createElement("div");
+			sub.className = "mxu_inline_tip_sub";
+			sub.textContent = REGION_LABEL_LOC[region] || "MiniMax";
+			headLeft.appendChild(title);
+			headLeft.appendChild(sub);
+			head.appendChild(headLeft);
+			const live = document.createElement("span");
+			live.className = "mxu_inline_tip_live";
+			const loading = !data || data.phase === "init";
+			live.textContent = busy ? "刷新中…" : (loading ? "读取中…" : (data && data.fetchedAt ? "更新于 " + new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""));
+			head.appendChild(live);
+			root.appendChild(head);
+
+			if (data && data.error) {
+				const err = document.createElement("div");
+				err.className = "mxu_inline_tip_error";
+				err.textContent = data.error;
+				root.appendChild(err);
+			}
+			if (loading && (!accounts || accounts.length === 0)) {
+				const empty = document.createElement("div");
+				empty.className = "mxu_inline_tip_empty";
+				empty.textContent = busy ? "正在刷新用量…" : "正在读取用量…";
+				root.appendChild(empty);
+			}
+
+			(accounts || []).forEach(function (acct) {
+				const card = document.createElement("div");
+				card.className = "mxu_inline_account" + (acct.region === region ? " mxu_inline_account_selected" : "");
+				const cardHead = document.createElement("div");
+				cardHead.className = "mxu_inline_account_head";
+				const chip = document.createElement("span");
+				chip.className = "mxu_inline_chip";
+				chip.textContent = REGION_LABEL_LOC[acct.region] || acct.region;
+				cardHead.appendChild(chip);
+				const name = document.createElement("span");
+				name.className = "mxu_inline_account_name";
+				name.textContent = acct.planName || "订阅套餐";
+				cardHead.appendChild(name);
+				if (acct.stale) {
+					const stale = document.createElement("span");
+					stale.className = "mxu_inline_stale";
+					stale.textContent = "可能过期";
+					cardHead.appendChild(stale);
+				}
+				card.appendChild(cardHead);
+				if (acct.error) {
+					const e = document.createElement("div");
+					e.className = "mxu_inline_account_error";
+					e.textContent = acct.error;
+					card.appendChild(e);
+				}
+				(acct.models || []).forEach(function (m) {
+					const mb = document.createElement("div");
+					mb.className = "mxu_inline_model";
+					const mn = document.createElement("div");
+					mn.className = "mxu_inline_model_name";
+					mn.textContent = m.name;
+					mb.appendChild(mn);
+					[{
+						label: "5 小时窗口",
+						percent: m.intervalRemainingPercent,
+						included: m.included,
+						endAt: m.intervalEndAt,
+					}, {
+						label: "本周窗口",
+						percent: m.weeklyRemainingPercent,
+						included: m.included,
+						endAt: m.weeklyEndAt,
+					}].forEach(function (row) {
+						const metric = document.createElement("div");
+						metric.className = "mxu_inline_metric";
+						const left = document.createElement("span");
+						const resetText = row.endAt ? " · " + formatCountdown(row.endAt, false) : "";
+						left.textContent = row.label + resetText;
+						const right = document.createElement("b");
+						right.textContent = row.included === false ? "未包含" : (typeof row.percent === "number" ? Math.round(row.percent) + "%" : "—");
+						metric.appendChild(left);
+						metric.appendChild(right);
+						mb.appendChild(metric);
+					});
+					card.appendChild(mb);
+				});
+				root.appendChild(card);
+			});
+
+			// 关闭按钮
+			const close = document.createElement("button");
+			close.type = "button";
+			close.textContent = "关闭";
+			close.style.cssText = "margin-top:10px;padding:8px 12px;width:100%;border:0;border-radius:8px;background:color-mix(in srgb,#818cf8 18%,transparent);color:#a5b4fc;font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent";
+			close.addEventListener("click", onClose);
+			root.appendChild(close);
+
+			host.appendChild(root);
+			return function cleanup() { if (host.contains(root)) host.removeChild(root); };
 		}
 
 		function apply(ctx) {
