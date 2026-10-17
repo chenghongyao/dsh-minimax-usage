@@ -29,6 +29,7 @@ window.__ModuleLoader__.load({
 			".mxu_inline:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3,#3b82f6)}",
 			".mxu_inline:active{transform:scale(.98)}",
 			".mxu_inline[data-busy=true]{background:var(--dsw-alias-interactive-bg-active,rgba(59,130,246,.12))}",
+			".mxu_inline_disabled{opacity:.5;cursor:default}",
 			".mxu_inline_rows{display:inline-flex;flex-direction:column;align-items:stretch;justify-content:center;gap:3px;width:100%}",
 			".mxu_inline_line{display:inline-flex;align-items:center;gap:4px;width:100%;height:6px}",
 			".mxu_inline_label{display:inline-block;width:18px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:9px;font-weight:600;line-height:10px;text-align:right;letter-spacing:.01em;flex:none}",
@@ -176,6 +177,7 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = react.useState(false);
 			const [tick, setTick] = react.useState(0);
 			const requestSeq = react.useRef(0);
+			const mounted = react.useRef(true);
 			// 标记首次挂载：此时 Host 的 service 可能仍在 prewarm，/status 只会
 			// 返回 phase:"init" 占位快照 —— 必须走 /refresh 强制 fetch 真实数据，
 			// 否则用户必须点一下按钮或等 15s 轮询才能看到用量。
@@ -187,7 +189,7 @@ window.__ModuleLoader__.load({
 				if (force) setBusy(true);
 				return api(force ? "/refresh" : "/status", force ? { method: "POST" } : undefined)
 					.then((response) => {
-						if (seq !== requestSeq.current || !enabled) return;
+						if (seq !== requestSeq.current || !mounted.current) return;
 						if (response.body && typeof response.body === "object") setData(response.body);
 					})
 					.catch(() => {})
@@ -196,7 +198,16 @@ window.__ModuleLoader__.load({
 					});
 			}, [enabled, region]);
 
+			// 跟踪 mounted 状态：组件卸载后回调 setData 会被 React 警告（"can't perform
+			// state update on unmounted component"），mounted ref 是标准做法。
+			react.useEffect(() => {
+				mounted.current = true;
+				return () => { mounted.current = false; };
+			}, []);
+
 			// 挂载 / region 变化：首次走 force=true 让 Host 真去 fetch；之后走 /status 缓存。
+			// 注意：cleanup 只标记 mounted=false 让 in-flight 请求自动丢弃，
+			// 不再 ++requestSeq —— 那会让响应被错误地判为过期。
 			react.useEffect(() => {
 				if (!enabled) {
 					setData(null);
@@ -206,29 +217,32 @@ window.__ModuleLoader__.load({
 				}
 				const force = isInitialMount.current;
 				isInitialMount.current = false;
-				++requestSeq.current;
 				load(force);
-				return () => { ++requestSeq.current; };
+				return undefined;
 			}, [enabled, region, load]);
 
 			// 轮询：init 态下 3s 一次（让 prewarm 完成后立刻拿到真实数据），
 			// ready 态下切回 15s 节流。
+			// data 不能进依赖列表，否则每次 setData 都会重启 effect → 死循环；
+			// 通过 dataRef 在回调里读取最新值。
+			const dataRef = react.useRef(data);
+			dataRef.current = data;
 			react.useEffect(() => {
 				if (!enabled) return undefined;
 				const POLL_FAST_MS = 3000;
 				const POLL_NORMAL_MS = 15000;
 				let cancelled = false;
-				const schedule = () => {
-					const id = setTimeout(() => {
-						if (cancelled) return;
-						load(false);
-						schedule();
-					}, data && data.phase !== "init" ? POLL_NORMAL_MS : POLL_FAST_MS);
-					return id;
+				let timerId;
+				const tick = () => {
+					if (cancelled) return;
+					load(false);
+					const current = dataRef.current;
+					const delay = current && current.phase !== "init" ? POLL_NORMAL_MS : POLL_FAST_MS;
+					timerId = setTimeout(tick, delay);
 				};
-				const handle = schedule();
-				return () => { cancelled = true; clearTimeout(handle); };
-			}, [enabled, region, load, data]);
+				timerId = setTimeout(tick, POLL_FAST_MS);
+				return () => { cancelled = true; clearTimeout(timerId); };
+			}, [enabled, region, load]);
 
 			react.useEffect(() => {
 				if (!enabled) return undefined;
@@ -322,21 +336,31 @@ window.__ModuleLoader__.load({
 			const [expanded, setExpanded] = react.useState(false);
 			const tooltipId = react.useId();
 
-			if (!enabled) return null;
+			// 不要 return null — 即使 enabled=false（provider 不是 minimax 或 directory 还在
+			// 初始化）也保持占位渲染。原因是 DSH 的 conversation.input.right slot
+			// 容器在 slot 返回 null 时仍然占据布局位置，但用户的"按钮不见了"体验
+			// 来自 enabled 抖动：网络/状态瞬变导致 enabled 在 true/false 之间反复
+			// 切换。改成"永远占位 + 数据区降级显示"，既保留按钮位置也让用户看到
+			// 当前状态。
+			const disabled = !enabled;
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
-			const selected = accountForSelection(accounts, region, current && current.model);
+			const selected = disabled
+				? { account: undefined, model: undefined }
+				: accountForSelection(accounts, region, current && current.model);
 			const account = selected.account;
 			const model = selected.model;
 			const loading = !data || data.phase === "init";
 			const error = (account && account.error) || (data && data.error);
 			const intervalEndAt = model && model.intervalEndAt;
 			const weeklyEndAt = model && model.weeklyEndAt;
-			const summary = loading
-				? "MiniMax Token Plan 用量读取中"
-				: error && !model
-					? "MiniMax Token Plan 用量异常：" + error
-					: "MiniMax " + (REGION_LABEL[region] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
+			const summary = disabled
+				? "MiniMax Token Plan：当前模型不是 MiniMax Token Plan"
+				: loading
+					? "MiniMax Token Plan 用量读取中"
+					: error && !model
+						? "MiniMax Token Plan 用量异常：" + error
+						: "MiniMax " + (REGION_LABEL[region] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
 			const showDesktopTooltip = hovered || focused;
 			const showExpanded = expanded;
 			const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width:640px)").matches;
@@ -397,14 +421,16 @@ window.__ModuleLoader__.load({
 			},
 				createElement("button", {
 					type: "button",
-					className: "mxu_inline",
+					className: "mxu_inline" + (disabled ? " mxu_inline_disabled" : ""),
 					"aria-label": summary,
 					"aria-busy": busy || loading ? "true" : "false",
 					"aria-describedby": showDesktopTooltip ? tooltipId : undefined,
 					"aria-expanded": showExpanded ? "true" : (showDesktopTooltip ? "true" : "false"),
 					title: summary,
 					"data-busy": busy ? "true" : undefined,
-					onClick: () => {
+					"data-disabled": disabled ? "true" : undefined,
+					disabled: disabled,
+					onClick: disabled ? undefined : () => {
 						setExpanded((v) => !v);
 						void load(true);
 					},
@@ -412,24 +438,37 @@ window.__ModuleLoader__.load({
 					onBlur: () => setFocused(false),
 				},
 					createElement("span", { className: "mxu_inline_rows" },
-						createElement(CompactQuotaLine, {
-							label: "5h",
-							percent: model && model.intervalRemainingPercent,
-							included: model && model.included,
-							loading,
-							reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
-						}),
-						createElement(CompactQuotaLine, {
-							label: "7d",
-							percent: model && model.weeklyRemainingPercent,
-							included: model && model.included,
-							loading,
-							reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
-						}),
+						disabled
+							? createElement("span", {
+								className: "mxu_inline_line",
+								style: { justifyContent: "center", color: "var(--dsw-alias-label-tertiary, rgba(255,255,255,.35))" },
+							},
+								createElement("span", {
+									style: { fontSize: "10px", fontWeight: 500 },
+								}, current && current.provider
+									? "—" 
+									: "…"),
+							)
+							: createElement(CompactQuotaLine, {
+								label: "5h",
+								percent: model && model.intervalRemainingPercent,
+								included: model && model.included,
+								loading,
+								reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
+							}),
+						disabled
+							? null
+							: createElement(CompactQuotaLine, {
+								label: "7d",
+								percent: model && model.weeklyRemainingPercent,
+								included: model && model.included,
+								loading,
+								reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
+							}),
 					),
 				),
-				// 桌面：仍走 React 子树渲染浮窗
-				!isMobile && showDesktopTooltip ? createElement(DetailPanel, {
+				// 桌面：仍走 React 子树渲染浮窗（disabled 时不响应）
+				!isMobile && showDesktopTooltip && !disabled ? createElement(DetailPanel, {
 					id: tooltipId,
 					data,
 					accounts,
