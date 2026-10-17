@@ -208,9 +208,11 @@ window.__ModuleLoader__.load({
 			// 挂载 / region 变化：首次走 force=true 让 Host 真去 fetch；之后走 /status 缓存。
 			// 注意：cleanup 只标记 mounted=false 让 in-flight 请求自动丢弃，
 			// 不再 ++requestSeq —— 那会让响应被错误地判为过期。
+			// enabled=false 时不 setData(null) —— 保留最后数据避免 UI 闪烁；
+			// 真正"没数据"的场景只在初次挂载且 enabled=false 时发生，由首次
+			// setData(null) 默认值已经处理。
 			react.useEffect(() => {
 				if (!enabled) {
-					setData(null);
 					setBusy(false);
 					isInitialMount.current = true;
 					return undefined;
@@ -336,18 +338,21 @@ window.__ModuleLoader__.load({
 			const [expanded, setExpanded] = react.useState(false);
 			const tooltipId = react.useId();
 
-			// 不要 return null — 即使 enabled=false（provider 不是 minimax 或 directory 还在
-			// 初始化）也保持占位渲染。原因是 DSH 的 conversation.input.right slot
-			// 容器在 slot 返回 null 时仍然占据布局位置，但用户的"按钮不见了"体验
-			// 来自 enabled 抖动：网络/状态瞬变导致 enabled 在 true/false 之间反复
-			// 切换。改成"永远占位 + 数据区降级显示"，既保留按钮位置也让用户看到
-			// 当前状态。
-			const disabled = !enabled;
+			// 用 ref 记录"上一次成功的 region"。如果 enabled 短暂翻成 false（例如
+			// mobile 切后台后 DSH 在 microtask 里重置 directory 再回 ready），我们继续
+			// 用上一次的 region 显示数据，而不是切到 "—" 占位——后者会被肉眼看到
+			// 一次闪烁。视觉上：稳定有数据 → 稳定有数据，从不抖。
+			const lastGoodRegionRef = react.useRef(region);
+			if (region !== undefined) lastGoodRegionRef.current = region;
+			const stableRegion = region !== undefined ? region : lastGoodRegionRef.current;
+			// disabled 仅在 enabled 一直是 false 时才显示占位（第一次挂载时），
+			// 曾经是 minimax provider 又短暂翻成非时仍按 enabled=true 渲染。
+			const disabled = region === undefined && lastGoodRegionRef.current === undefined;
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
 			const selected = disabled
 				? { account: undefined, model: undefined }
-				: accountForSelection(accounts, region, current && current.model);
+				: accountForSelection(accounts, stableRegion, current && current.model);
 			const account = selected.account;
 			const model = selected.model;
 			const loading = !data || data.phase === "init";
@@ -360,7 +365,7 @@ window.__ModuleLoader__.load({
 					? "MiniMax Token Plan 用量读取中"
 					: error && !model
 						? "MiniMax Token Plan 用量异常：" + error
-						: "MiniMax " + (REGION_LABEL[region] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
+						: "MiniMax " + (REGION_LABEL[stableRegion] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
 			const showDesktopTooltip = hovered || focused;
 			const showExpanded = expanded;
 			const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width:640px)").matches;
