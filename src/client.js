@@ -357,7 +357,14 @@ window.__ModuleLoader__.load({
 			const usePortal = isMobile && showExpanded;
 			const closeMobile = react.useCallback(() => setExpanded(false), []);
 
-			// useEffect：把详情面板 DOM 直接挂到 body 上（不依赖 react-dom portal）
+			// 关键：依赖只放 usePortal 和 closeMobile。data / region / busy 变化时
+			// **不要重建整个 panel**，否则 backdrop 会闪一下、sheet_up 动画会重新触发，
+			// 用户看到的就是"闪烁"。面板内容由下面的 "刷新" effect 在不重建 backdrop
+			// 的前提下单独 update。
+			const panelRef = react.useRef(null);
+			const latestArgsRef = react.useRef(null);
+			latestArgsRef.current = { region, accounts, data, busy, closeMobile };
+
 			react.useEffect(function () {
 				if (!usePortal) return undefined;
 				const root = document.createElement("div");
@@ -372,32 +379,63 @@ window.__ModuleLoader__.load({
 				const panel = document.createElement("div");
 				panel.className = "mxu_inline_tip";
 				panel.style.pointerEvents = "auto";
-				// 把 DetailPanel 的 React 元素用 render 挂载进来
-				const renderInto = (host) => {
+				panelRef.current = panel;
+				// 首次渲染
+				const renderInto = (host, args) => {
 					host.innerHTML = "";
-					// 用一个轻量子组件把 data/accounts 渲染成 DOM
-					const subs = buildMobileSheet({
+					return buildMobileSheet({
 						host,
-						region,
-						accounts,
-						data,
-						busy,
-						onClose: closeMobile,
+						region: args.region,
+						accounts: args.accounts,
+						data: args.data,
+						busy: args.busy,
+						onClose: args.closeMobile,
 					});
-					return subs;
 				};
-				renderInto(panel);
+				renderInto(panel, latestArgsRef.current);
 				root.appendChild(backdrop);
 				root.appendChild(panel);
 				document.body.appendChild(root);
-				// 弹窗内倒计时跟主按钮同步：每 30s 重新渲染一次 panel 内容。
-				// 只重渲染内容节点（panel），保留遮罩和淡入动画。
-				const tickId = setInterval(() => renderInto(panel), 30000);
 				return () => {
-					clearInterval(tickId);
+					panelRef.current = null;
 					try { document.body.removeChild(root); } catch (_) {}
 				};
-			}, [usePortal, data, accounts, busy, region, closeMobile]);
+			}, [usePortal, closeMobile]);
+
+			// 数据变化时只重新填充 panel 内容，不重建 backdrop、不重放动画。
+			react.useEffect(function () {
+				if (!usePortal || !panelRef.current) return;
+				const renderInto = (host) => {
+					host.innerHTML = "";
+					return buildMobileSheet({
+						host,
+						region: latestArgsRef.current.region,
+						accounts: latestArgsRef.current.accounts,
+						data: latestArgsRef.current.data,
+						busy: latestArgsRef.current.busy,
+						onClose: latestArgsRef.current.closeMobile,
+					});
+				};
+				renderInto(panelRef.current);
+			}, [region, accounts, data, busy, usePortal]);
+
+			// 弹窗内倒计时跟主按钮同步：每 30s 重新渲染 panel 内容。
+			react.useEffect(function () {
+				if (!usePortal || !panelRef.current) return undefined;
+				const tickId = setInterval(() => {
+					if (!panelRef.current) return;
+					panelRef.current.innerHTML = "";
+					buildMobileSheet({
+						host: panelRef.current,
+						region: latestArgsRef.current.region,
+						accounts: latestArgsRef.current.accounts,
+						data: latestArgsRef.current.data,
+						busy: latestArgsRef.current.busy,
+						onClose: latestArgsRef.current.closeMobile,
+					});
+				}, 30000);
+				return () => clearInterval(tickId);
+			}, [usePortal]);
 
 			return createElement("span", {
 				className: "mxu_inline_host",
