@@ -178,10 +178,6 @@ window.__ModuleLoader__.load({
 			const [tick, setTick] = react.useState(0);
 			const requestSeq = react.useRef(0);
 			const mounted = react.useRef(true);
-			// 标记首次挂载：此时 Host 的 service 可能仍在 prewarm，/status 只会
-			// 返回 phase:"init" 占位快照 —— 必须走 /refresh 强制 fetch 真实数据，
-			// 否则用户必须点一下按钮或等 15s 轮询才能看到用量。
-			const isInitialMount = react.useRef(true);
 
 			const load = react.useCallback((force) => {
 				if (!enabled) return Promise.resolve();
@@ -196,61 +192,45 @@ window.__ModuleLoader__.load({
 					.finally(() => {
 						if (seq === requestSeq.current && force) setBusy(false);
 					});
-			}, [enabled, region]);
+			}, [enabled]);
 
-			// 跟踪 mounted 状态：组件卸载后回调 setData 会被 React 警告（"can't perform
-			// state update on unmounted component"），mounted ref 是标准做法。
+			// 跟踪 mounted 状态。
 			react.useEffect(() => {
 				mounted.current = true;
 				return () => { mounted.current = false; };
 			}, []);
 
-			// 挂载 / region 变化：首次走 force=true 让 Host 真去 fetch；之后走 /status 缓存。
-			// 注意：cleanup 只标记 mounted=false 让 in-flight 请求自动丢弃，
-			// 不再 ++requestSeq —— 那会让响应被错误地判为过期。
-			// enabled=false 时不 setData(null) —— 保留最后数据避免 UI 闪烁；
-			// 真正"没数据"的场景只在初次挂载且 enabled=false 时发生，由首次
-			// setData(null) 默认值已经处理。
+			// **关键**：用 onceRef 锁住首次 fetch，避免 enabled 在 true/false 反复
+			// 切换时每次都重新 fetch。region 不进依赖，因为 region 翻转不该重启 fetch。
+			// 整个 effect 只在 enabled 第一次变 true 时跑一次拿初始数据，之后依赖
+			// 轮询 tick 来更新。
+			const didInitialFetch = react.useRef(false);
 			react.useEffect(() => {
-				if (!enabled) {
-					setBusy(false);
-					isInitialMount.current = true;
-					return undefined;
-				}
-				const force = isInitialMount.current;
-				isInitialMount.current = false;
-				load(force);
+				if (!enabled || didInitialFetch.current) return undefined;
+				didInitialFetch.current = true;
+				load(true);
 				return undefined;
-			}, [enabled, region, load]);
+			}, [enabled, load]);
 
-			// 轮询：init 态下 3s 一次（让 prewarm 完成后立刻拿到真实数据），
-			// ready 态下切回 15s 节流。
-			// data 不能进依赖列表，否则每次 setData 都会重启 effect → 死循环；
-			// 通过 dataRef 在回调里读取最新值。
-			const dataRef = react.useRef(data);
-			dataRef.current = data;
+			// 轮询：每 15s 拉一次。region 变化不重启 timer —— 让 timer 一直跑。
 			react.useEffect(() => {
-				if (!enabled) return undefined;
-				const POLL_FAST_MS = 3000;
-				const POLL_NORMAL_MS = 15000;
+				const POLL_MS = 15000;
 				let cancelled = false;
 				let timerId;
 				const tick = () => {
 					if (cancelled) return;
 					load(false);
-					const current = dataRef.current;
-					const delay = current && current.phase !== "init" ? POLL_NORMAL_MS : POLL_FAST_MS;
-					timerId = setTimeout(tick, delay);
+					timerId = setTimeout(tick, POLL_MS);
 				};
-				timerId = setTimeout(tick, POLL_FAST_MS);
+				timerId = setTimeout(tick, 1000);    // 首次 1s 后快速拉一次
 				return () => { cancelled = true; clearTimeout(timerId); };
-			}, [enabled, region, load]);
+			}, [enabled, load]);
 
+			// 30s tick：让倒计时重算
 			react.useEffect(() => {
-				if (!enabled) return undefined;
 				const id = setInterval(() => setTick((value) => value + 1), 30000);
 				return () => clearInterval(id);
-			}, [enabled]);
+			}, []);
 
 			return { data, busy, load, tick };
 		}
@@ -347,6 +327,9 @@ window.__ModuleLoader__.load({
 			const stableRegion = region !== undefined ? region : lastGoodRegionRef.current;
 			// disabled 仅在 enabled 一直是 false 时才显示占位（第一次挂载时），
 			// 曾经是 minimax provider 又短暂翻成非时仍按 enabled=true 渲染。
+			// 关键：disabled 是 stateful 的——一旦用户曾见到过数据，就不再 disabled。
+			// 这避免了 useSyncExternalStore 在 microtask 里反复切换 status 导致的
+			// "数据 ↔ 占位" 闪烁。
 			const disabled = region === undefined && lastGoodRegionRef.current === undefined;
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
@@ -421,11 +404,16 @@ window.__ModuleLoader__.load({
 				"data-minimax-usage": "true",
 				"data-minimax-usage-provider": current && current.provider,
 				"data-minimax-usage-region": region,
+				"data-minimax-usage-disabled": disabled ? "true" : "false",
+				"data-minimax-usage-region-hist": lastGoodRegionRef.current || "none",
 				onMouseEnter: () => setHovered(true),
 				onMouseLeave: () => setHovered(false),
 			},
 				createElement("button", {
 					type: "button",
+					// 关键：button 的 DOM `disabled` 属性永远设为 false，让 React/浏览器
+					// 不把这个 button 当不可交互重建。disabled 状态用 CSS（半透明 + 默认
+					// 光标）和 onClick 守卫来表达。
 					className: "mxu_inline" + (disabled ? " mxu_inline_disabled" : ""),
 					"aria-label": summary,
 					"aria-busy": busy || loading ? "true" : "false",
@@ -434,8 +422,8 @@ window.__ModuleLoader__.load({
 					title: summary,
 					"data-busy": busy ? "true" : undefined,
 					"data-disabled": disabled ? "true" : undefined,
-					disabled: disabled,
-					onClick: disabled ? undefined : () => {
+					onClick: () => {
+						if (disabled) return;
 						setExpanded((v) => !v);
 						void load(true);
 					},
