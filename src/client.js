@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
 		const css = [
 			// === inline quota cell (button on the conversation input row) ===
 			".mxu_inline_host{display:inline-flex;position:relative;flex:none;align-items:center;height:28px;margin:0 2px;z-index:1}",
-			".mxu_inline{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;width:108px;min-height:28px;padding:0 2px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,rgba(255,255,255,.62));cursor:pointer;font:inherit;line-height:1;user-select:none;transition:background .14s ease,opacity .14s ease,transform .14s ease;-webkit-tap-highlight-color:transparent}",
+			".mxu_inline{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;width:102px;min-height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,rgba(255,255,255,.62));cursor:pointer;font:inherit;line-height:1;user-select:none;transition:background .14s ease,opacity .14s ease,transform .14s ease;-webkit-tap-highlight-color:transparent}",
 			".mxu_inline:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
 			".mxu_inline:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3,#3b82f6)}",
 			".mxu_inline:active{transform:scale(.98)}",
