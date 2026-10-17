@@ -378,7 +378,11 @@ window.__ModuleLoader__.load({
 				root.appendChild(backdrop);
 				root.appendChild(panel);
 				document.body.appendChild(root);
+				// 弹窗内倒计时跟主按钮同步：每 30s 重新渲染一次 panel 内容。
+				// 只重渲染内容节点（panel），保留遮罩和淡入动画。
+				const tickId = setInterval(() => renderInto(panel), 30000);
 				return () => {
+					clearInterval(tickId);
 					try { document.body.removeChild(root); } catch (_) {}
 				};
 			}, [usePortal, data, accounts, busy, region, closeMobile]);
