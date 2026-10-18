@@ -292,7 +292,10 @@ window.__ModuleLoader__.load({
 					(account.models || []).map((model) => createElement("div", { className: "mxu_inline_model", key: model.name },
 						createElement("div", { className: "mxu_inline_model_name" }, model.name),
 						detailMetric("5 小时窗口", model.intervalRemainingPercent, model.included, formatCountdown(model.intervalEndAt)),
-						detailMetric("本周窗口", model.weeklyRemainingPercent, model.included, formatCountdown(model.weeklyEndAt)),
+						// 7d 行：套餐未提供时整行不渲染
+						(model.weeklyRemainingPercent === undefined && model.weeklyRemainsTimeMs === undefined)
+							? null
+							: detailMetric("本周窗口", model.weeklyRemainingPercent, model.included, formatCountdown(model.weeklyEndAt)),
 					)),
 				)),
 				createElement("div", { className: "mxu_inline_hint" }, "点击立即刷新 · 仅当前 MiniMax Token Plan provider 显示"),
@@ -487,15 +490,17 @@ window.__ModuleLoader__.load({
 								loading,
 								reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
 							}),
-						disabled
-							? null
-							: createElement(CompactQuotaLine, {
-								label: "7d",
-								percent: model && model.weeklyRemainingPercent,
-								included: model && model.included,
-								loading,
-								reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
-							}),
+						// 7d 行：套餐未提供 weekly 字段时（model.weeklyRemainingPercent 与
+							// model.weeklyRemainsTimeMs 都为 undefined）整行不渲染。
+							disabled || (model && (model.weeklyRemainingPercent === undefined && model.weeklyRemainsTimeMs === undefined))
+								? null
+								: createElement(CompactQuotaLine, {
+									label: "7d",
+									percent: model && model.weeklyRemainingPercent,
+									included: model && model.included,
+									loading,
+									reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
+								}),
 					),
 				),
 				// 桌面：仍走 React 子树渲染浮窗（disabled 时不响应）
@@ -582,17 +587,20 @@ window.__ModuleLoader__.load({
 					mn.className = "mxu_inline_model_name";
 					mn.textContent = m.name;
 					mb.appendChild(mn);
+					// 7d 窗口：套餐未提供时整行不渲染
+					const hasWeekly = m.weeklyRemainingPercent !== undefined || m.weeklyRemainsTimeMs !== undefined;
 					[{
 						label: "5 小时窗口",
 						percent: m.intervalRemainingPercent,
 						included: m.included,
 						endAt: m.intervalEndAt,
-					}, {
+					}, hasWeekly ? {
 						label: "本周窗口",
 						percent: m.weeklyRemainingPercent,
 						included: m.included,
 						endAt: m.weeklyEndAt,
-					}].forEach(function (row) {
+					} : null].forEach(function (row) {
+						if (!row) return;
 						const metric = document.createElement("div");
 						metric.className = "mxu_inline_metric";
 						const left = document.createElement("span");
