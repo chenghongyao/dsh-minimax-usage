@@ -1,0 +1,53 @@
+/** MiniMax open-platform region. */
+export type Region = "cn" | "global";
+/** One model row after field-alias normalization. */
+export interface UsageModel {
+    name: string;
+    /** False when every known quota field is 0 (model not in this plan). */
+    included: boolean;
+    intervalRemainingPercent?: number;
+    weeklyRemainingPercent?: number;
+    remainsTimeMs?: number;
+    weeklyRemainsTimeMs?: number;
+    intervalEndAt?: number;
+    weeklyEndAt?: number;
+}
+/** One configured (or attempted) Token Plan account. */
+export interface AccountSnapshot {
+    region: Region;
+    configured: boolean;
+    ok: boolean;
+    stale?: boolean;
+    error?: string;
+    planName?: string;
+    models: UsageModel[];
+}
+export type RefreshReason = "startup" | "turn-idle" | "heartbeat" | "credential" | "manual" | "interval-reset" | "running";
+/** Browser-facing usage payload. Never contains secrets or Host objects. */
+export interface UsageSnapshot {
+    fetchedAt: number | null;
+    error?: string;
+    reason?: RefreshReason;
+    heartbeatMs?: number;
+    /**
+     * "init" while the plugin is still warming credentials after start; the
+     * client renders a loading state instead of treating the empty accounts
+     * list as an unconfigured error. Absent (or "ready") means the snapshot
+     * reflects a real fetch.
+     */
+    phase?: "init" | "ready";
+    accounts: AccountSnapshot[];
+}
+/** Structural face of `ctx.credentials` used by this plugin. */
+export interface CredentialsLike {
+    resolve(ref: string): Promise<{
+        value?: string;
+    } | undefined>;
+}
+export declare const GLOBAL_KEY_REF = "MINIMAX_API_KEY";
+export declare const CN_KEY_REF = "MINIMAX_CN_API_KEY";
+/** Official FAQ hosts first; `api.*` is the TLS-stable fallback. */
+export declare const REMAINS_URLS: Record<Region, readonly string[]>;
+export declare const CACHE_TTL_MS = 45000;
+export declare const FETCH_TIMEOUT_MS = 8000;
+//# sourceMappingURL=types.d.ts.map
