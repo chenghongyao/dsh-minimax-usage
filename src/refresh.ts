@@ -71,6 +71,7 @@ export class RefreshScheduler {
   private resetCancel: (() => void) | undefined;
   private resetFireAt: number | undefined;
   private prefetching = false;
+  private disposed = false;
   heartbeatMs = HEARTBEAT_MIN_MS;
 
   constructor(
@@ -137,7 +138,7 @@ export class RefreshScheduler {
     this.syncRunningRefresh();
 
     // Another Agent is still running, so do not arm a global idle refresh.
-    if (this.runningAgents.size > 0) return;
+    if (this.disposed || this.runningAgents.size > 0) return;
 
     this.armHeartbeat();
     if (this.dirty.size === 0) return;
@@ -149,11 +150,19 @@ export class RefreshScheduler {
   }
 
   async refreshNow(reason: RefreshReason): Promise<void> {
+    if (this.disposed) return;
     this.clearIdleTimer();
     await this.prefetch(reason, false);
   }
 
+  /**
+   * Stop the scheduler for good. The sticky `disposed` flag is set first because a
+   * prefetch that is still in flight can resolve after this point; its `finally` block
+   * must not re-arm the heartbeat, otherwise the pending timer keeps the host process
+   * alive and the desktop shell can never shut down gracefully.
+   */
   dispose(): void {
+    this.disposed = true;
     this.clearIdleTimer();
     this.clearHeartbeat();
     this.clearRunningRefresh();
@@ -164,7 +173,7 @@ export class RefreshScheduler {
   }
 
   private async prefetch(reason: RefreshReason, resetHeartbeat: boolean): Promise<void> {
-    if (this.prefetching) return;
+    if (this.disposed || this.prefetching) return;
     this.prefetching = true;
     try {
       const snap = await this.target.snapshot(true, reason);
@@ -186,6 +195,7 @@ export class RefreshScheduler {
   }
 
   private syncRunningRefresh(): void {
+    if (this.disposed) return;
     if (!this.hasEligibleRunningAgent()) {
       this.clearRunningRefresh();
       return;
@@ -194,6 +204,7 @@ export class RefreshScheduler {
   }
 
   private syncBackgroundRefresh(): void {
+    if (this.disposed) return;
     if (this.hasEligibleRunningAgent()) {
       this.syncRunningRefresh();
       return;
@@ -202,6 +213,7 @@ export class RefreshScheduler {
   }
 
   private armRunningRefresh(): void {
+    if (this.disposed) return;
     this.clearRunningRefresh();
     if (!this.hasEligibleRunningAgent()) return;
     this.runningCancel = this.clock.timeout(() => {
@@ -211,6 +223,7 @@ export class RefreshScheduler {
   }
 
   private armHeartbeat(): void {
+    if (this.disposed) return;
     this.clearHeartbeat();
     if (this.runningAgents.size > 0) return;
     this.heartbeatCancel = this.clock.timeout(() => {
@@ -236,6 +249,7 @@ export class RefreshScheduler {
   }
 
   private armResetRefreshAt(fireAt: number | undefined): void {
+    if (this.disposed) return;
     this.clearResetRefresh();
     if (fireAt === undefined) return;
     const delay = fireAt - this.clock.now();
