@@ -10,7 +10,16 @@ import { regionOfProvider, RefreshScheduler } from "./refresh.js";
 import { UsageService } from "./service.js";
 export const name = "dsh-minimax-usage";
 export const inject = [];
-export function apply(ctx) {
+/**
+ * This MUST stay an arrow function. Cordis decides with `isConstructor(cb)` — true for
+ * anything carrying a `prototype`, i.e. a plain `function` declaration or a class — and
+ * then loads the plugin through its class branch (`new cb(ctx, config)`), where the
+ * disposer returned below is dropped. Losing that disposer left the scheduler's heartbeat
+ * timer armed forever, so the host process could never exit and desktop updates failed
+ * with "Host did not complete graceful task teardown". An arrow function keeps the callback
+ * non-constructible, so cordis takes the function branch and collects the disposer.
+ */
+export const apply = (ctx) => {
     const context = ctx;
     const service = new UsageService(context);
     const scheduler = new RefreshScheduler({
@@ -90,11 +99,17 @@ export function apply(ctx) {
     else {
         console.warn("[dsh-minimax-usage] ctx.inject unavailable; Web UI disabled");
     }
-    return () => {
+    const dispose = () => {
         scheduler.dispose();
         service.dispose();
     };
-}
+    // Register the cleanup through cordis' effect scope as well, so it still runs when a
+    // host loads this plugin through the class-plugin branch (which ignores the return
+    // value). Both paths are idempotent.
+    if (typeof context.effect === "function")
+        context.effect(() => dispose);
+    return dispose;
+};
 async function handleStatus(req, res, service, scheduler, force) {
     const method = String(req.method ?? "GET").toUpperCase();
     if (force && method !== "POST" && method !== "GET") {

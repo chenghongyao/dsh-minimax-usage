@@ -33,6 +33,7 @@ export declare class RefreshScheduler {
     private resetCancel;
     private resetFireAt;
     private prefetching;
+    private disposed;
     heartbeatMs: number;
     constructor(target: RefreshTarget, clock?: Clock);
     markDirty(region: Region): void;
@@ -48,6 +49,12 @@ export declare class RefreshScheduler {
     onRunning(agentId?: string): void;
     onIdle(agentId?: string): void;
     refreshNow(reason: RefreshReason): Promise<void>;
+    /**
+     * Stop the scheduler for good. The sticky `disposed` flag is set first because a
+     * prefetch that is still in flight can resolve after this point; its `finally` block
+     * must not re-arm the heartbeat, otherwise the pending timer keeps the host process
+     * alive and the desktop shell can never shut down gracefully.
+     */
     dispose(): void;
     private prefetch;
     private hasEligibleRunningAgent;

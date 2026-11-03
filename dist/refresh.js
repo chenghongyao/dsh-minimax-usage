@@ -61,6 +61,7 @@ export class RefreshScheduler {
     resetCancel;
     resetFireAt;
     prefetching = false;
+    disposed = false;
     heartbeatMs = HEARTBEAT_MIN_MS;
     constructor(target, clock = systemClock) {
         this.target = target;
@@ -121,7 +122,7 @@ export class RefreshScheduler {
         this.minimaxRunningAgents.delete(key);
         this.syncRunningRefresh();
         // Another Agent is still running, so do not arm a global idle refresh.
-        if (this.runningAgents.size > 0)
+        if (this.disposed || this.runningAgents.size > 0)
             return;
         this.armHeartbeat();
         if (this.dirty.size === 0)
@@ -133,10 +134,19 @@ export class RefreshScheduler {
         }, IDLE_DELAY_MS);
     }
     async refreshNow(reason) {
+        if (this.disposed)
+            return;
         this.clearIdleTimer();
         await this.prefetch(reason, false);
     }
+    /**
+     * Stop the scheduler for good. The sticky `disposed` flag is set first because a
+     * prefetch that is still in flight can resolve after this point; its `finally` block
+     * must not re-arm the heartbeat, otherwise the pending timer keeps the host process
+     * alive and the desktop shell can never shut down gracefully.
+     */
     dispose() {
+        this.disposed = true;
         this.clearIdleTimer();
         this.clearHeartbeat();
         this.clearRunningRefresh();
@@ -146,7 +156,7 @@ export class RefreshScheduler {
         this.dirty.clear();
     }
     async prefetch(reason, resetHeartbeat) {
-        if (this.prefetching)
+        if (this.disposed || this.prefetching)
             return;
         this.prefetching = true;
         try {
@@ -172,6 +182,8 @@ export class RefreshScheduler {
         return false;
     }
     syncRunningRefresh() {
+        if (this.disposed)
+            return;
         if (!this.hasEligibleRunningAgent()) {
             this.clearRunningRefresh();
             return;
@@ -180,6 +192,8 @@ export class RefreshScheduler {
             this.armRunningRefresh();
     }
     syncBackgroundRefresh() {
+        if (this.disposed)
+            return;
         if (this.hasEligibleRunningAgent()) {
             this.syncRunningRefresh();
             return;
@@ -188,6 +202,8 @@ export class RefreshScheduler {
             this.armHeartbeat();
     }
     armRunningRefresh() {
+        if (this.disposed)
+            return;
         this.clearRunningRefresh();
         if (!this.hasEligibleRunningAgent())
             return;
@@ -197,6 +213,8 @@ export class RefreshScheduler {
         }, RUNNING_REFRESH_INTERVAL_MS);
     }
     armHeartbeat() {
+        if (this.disposed)
+            return;
         this.clearHeartbeat();
         if (this.runningAgents.size > 0)
             return;
@@ -221,6 +239,8 @@ export class RefreshScheduler {
         this.armResetRefreshAt(fireAt);
     }
     armResetRefreshAt(fireAt) {
+        if (this.disposed)
+            return;
         this.clearResetRefresh();
         if (fireAt === undefined)
             return;
