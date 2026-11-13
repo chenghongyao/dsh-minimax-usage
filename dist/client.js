@@ -86,7 +86,13 @@ window.__ModuleLoader__.load({
 			".mxu_rl_add:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
 			".mxu_rl_empty{padding:4px 2px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px}",
 			".mxu_rl_pick{display:flex;flex-direction:column;max-height:132px;overflow:auto;margin:2px 0 4px;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.06));border-radius:8px;padding:2px}",
-			".mxu_rl_pick_item{appearance:none;display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font:inherit;font-size:11px;text-align:left;cursor:pointer;padding:4px 6px;border-radius:6px}",
+			".mxu_rl_pick_item{appearance:none;display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font:inherit;font-size:11px;text-align:left;cursor:pointer;padding:4px 6px 4px 16px;border-radius:6px}",
+			".mxu_rl_group{display:flex;flex-direction:column}",
+			".mxu_rl_group_head{appearance:none;display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:var(--dsw-alias-label-secondary,rgba(255,255,255,.62));font:inherit;font-size:10.5px;font-weight:600;text-align:left;cursor:pointer;padding:4px 6px;border-radius:6px}",
+			".mxu_rl_group_head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_group_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+			".mxu_rl_group_count{flex:none;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-variant-numeric:tabular-nums}",
+			".mxu_rl_group_chev{flex:none;width:10px;text-align:center;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10px}",
 			".mxu_rl_pick_item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
 			".mxu_rl_pick_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
 			".mxu_rl_pick_add{flex:none;color:var(--dsw-alias-state-info-primary,#93c5fd);font-size:12px}",
@@ -193,6 +199,25 @@ window.__ModuleLoader__.load({
 			return sendAt <= Date.now() ? "即将发送" : formatCountdown(sendAt, false) + "后";
 		}
 
+		// 按工作区分组：key 优先用 workspaceId（同名工作区不合并），没有 id 时退回标题。
+		function groupCandidates(candidates) {
+			const groups = [];
+			const index = new Map();
+			(Array.isArray(candidates) ? candidates : []).forEach(function (candidate) {
+				const workspaceId = typeof candidate.workspaceId === "string" && candidate.workspaceId !== "" ? candidate.workspaceId : "";
+				const workspaceTitle = typeof candidate.workspace === "string" && candidate.workspace !== "" ? candidate.workspace : "";
+				const key = workspaceId !== "" ? "id:" + workspaceId : (workspaceTitle !== "" ? "title:" + workspaceTitle : "none");
+				let group = index.get(key);
+				if (group === undefined) {
+					group = { key: key, title: workspaceTitle !== "" ? workspaceTitle : "未分组", items: [] };
+					index.set(key, group);
+					groups.push(group);
+				}
+				group.items.push(candidate);
+			});
+			return groups;
+		}
+
 		function accountForSelection(accounts, region, modelId) {
 			const account = (accounts || []).find((item) => item && item.region === region);
 			if (!account) return { account: undefined, model: undefined };
@@ -295,6 +320,8 @@ window.__ModuleLoader__.load({
 		function DetailPanel(props) {
 			const accounts = Array.isArray(props.accounts) ? props.accounts : [];
 			const rateLimits = Array.isArray(props.rateLimits) ? props.rateLimits : [];
+			const candidateGroups = groupCandidates(props.candidates);
+			const expandedWorkspaces = Array.isArray(props.expandedWorkspaces) ? props.expandedWorkspaces : [];
 			const data = props.data;
 			const loading = !data || data.phase === "init";
 			return createElement("div", { className: "mxu_inline_tip", role: "tooltip", id: props.id },
@@ -367,20 +394,35 @@ window.__ModuleLoader__.load({
 					props.pickerOpen ? createElement("div", { className: "mxu_rl_pick" },
 						props.pickerLoading
 							? createElement("div", { className: "mxu_rl_empty" }, "正在读取会话…")
-							: (Array.isArray(props.candidates) && props.candidates.length > 0
-								? props.candidates.map((candidate) => createElement("button", {
-									type: "button",
-									key: candidate.sessionId,
-									className: "mxu_rl_pick_item",
-									title: candidate.sessionId,
-									onClick: () => {
-										if (props.onAddSession) props.onAddSession(candidate.sessionId);
-									},
-								},
-									createElement("span", { className: "mxu_rl_pick_name" }, candidate.title || shortSession(candidate.sessionId)),
-									candidate.workspace ? createElement("span", { className: "mxu_rl_item_ws" }, candidate.workspace) : null,
-									createElement("span", { className: "mxu_rl_pick_add" }, "+"),
-								))
+							: (candidateGroups.length > 0
+								? candidateGroups.map((group) => {
+									const expanded = expandedWorkspaces.indexOf(group.key) >= 0;
+									return createElement("div", { className: "mxu_rl_group", key: group.key },
+										createElement("button", {
+											type: "button",
+											className: "mxu_rl_group_head",
+											onClick: () => {
+												if (props.onToggleWorkspace) props.onToggleWorkspace(group.key);
+											},
+										},
+											createElement("span", { className: "mxu_rl_group_chev" }, expanded ? "▾" : "▸"),
+											createElement("span", { className: "mxu_rl_group_name" }, group.title),
+											createElement("span", { className: "mxu_rl_group_count" }, String(group.items.length)),
+										),
+										expanded ? group.items.map((candidate) => createElement("button", {
+											type: "button",
+											key: candidate.sessionId,
+											className: "mxu_rl_pick_item",
+											title: candidate.sessionId,
+											onClick: () => {
+												if (props.onAddSession) props.onAddSession(candidate.sessionId);
+											},
+										},
+											createElement("span", { className: "mxu_rl_pick_name" }, candidate.title || shortSession(candidate.sessionId)),
+											createElement("span", { className: "mxu_rl_pick_add" }, "+"),
+										)) : null,
+									);
+								})
 								: createElement("div", { className: "mxu_rl_empty" }, "没有可添加的会话")),
 					) : null,
 					createElement("div", { className: "mxu_rl_hint" }, "5 小时限额重置 2 分钟后自动发送「继续」"),
@@ -427,6 +469,14 @@ window.__ModuleLoader__.load({
 			const [pickerOpen, setPickerOpen] = react.useState(false);
 			const [pickerLoading, setPickerLoading] = react.useState(false);
 			const [candidates, setCandidates] = react.useState([]);
+			const [expandedWorkspaces, setExpandedWorkspaces] = react.useState([]);
+			const toggleWorkspace = react.useCallback(function (key) {
+				setExpandedWorkspaces(function (current) {
+					return current.indexOf(key) >= 0
+						? current.filter(function (item) { return item !== key; })
+						: current.concat([key]);
+				});
+			}, []);
 			const removeRateLimit = react.useCallback((sessionId) => {
 				void api("/rate-limits/remove", { method: "POST", body: JSON.stringify({ sessionId }) })
 					.then(function () { return load(false); });
@@ -454,6 +504,8 @@ window.__ModuleLoader__.load({
 					if (cancelled) return;
 					const items = response && response.body && Array.isArray(response.body.items) ? response.body.items : [];
 					setCandidates(items);
+					const groups = groupCandidates(items);
+					if (groups.length === 1) setExpandedWorkspaces([groups[0].key]);
 					setPickerLoading(false);
 				}).catch(function () {
 					if (!cancelled) setPickerLoading(false);
@@ -492,7 +544,7 @@ window.__ModuleLoader__.load({
 			// 的前提下单独 update。
 			const panelRef = react.useRef(null);
 			const latestArgsRef = react.useRef(null);
-			latestArgsRef.current = { region, accounts, data, busy, closeMobile, rateLimits, removeRateLimit, clearRateLimits, pickerOpen, pickerLoading, candidates, togglePicker, addSession };
+			latestArgsRef.current = { region, accounts, data, busy, closeMobile, rateLimits, removeRateLimit, clearRateLimits, pickerOpen, pickerLoading, candidates, expandedWorkspaces, togglePicker, toggleWorkspace, addSession };
 
 			react.useEffect(function () {
 				if (!usePortal) return undefined;
@@ -527,6 +579,8 @@ window.__ModuleLoader__.load({
 						candidates: args.candidates,
 						onTogglePicker: args.togglePicker,
 						onAddSession: args.addSession,
+						expandedWorkspaces: args.expandedWorkspaces,
+						onToggleWorkspace: args.toggleWorkspace,
 					});
 				};
 				renderInto(panel, latestArgsRef.current);
@@ -559,10 +613,12 @@ window.__ModuleLoader__.load({
 						candidates: latestArgsRef.current.candidates,
 						onTogglePicker: latestArgsRef.current.togglePicker,
 						onAddSession: latestArgsRef.current.addSession,
+						expandedWorkspaces: latestArgsRef.current.expandedWorkspaces,
+						onToggleWorkspace: latestArgsRef.current.toggleWorkspace,
 					});
 				};
 				renderInto(panelRef.current);
-			}, [region, accounts, data, busy, usePortal, pickerOpen, pickerLoading, candidates]);
+			}, [region, accounts, data, busy, usePortal, pickerOpen, pickerLoading, candidates, expandedWorkspaces]);
 
 			// 弹窗内倒计时跟主按钮同步：每 30s 重新渲染 panel 内容。
 			react.useEffect(function () {
@@ -585,6 +641,8 @@ window.__ModuleLoader__.load({
 						candidates: latestArgsRef.current.candidates,
 						onTogglePicker: latestArgsRef.current.togglePicker,
 						onAddSession: latestArgsRef.current.addSession,
+						expandedWorkspaces: latestArgsRef.current.expandedWorkspaces,
+						onToggleWorkspace: latestArgsRef.current.toggleWorkspace,
 					});
 				}, 30000);
 				return () => clearInterval(tickId);
@@ -666,7 +724,9 @@ window.__ModuleLoader__.load({
 					pickerOpen,
 					pickerLoading,
 					candidates,
+					expandedWorkspaces,
 					onTogglePicker: togglePicker,
+					onToggleWorkspace: toggleWorkspace,
 					onAddSession: addSession,
 				}) : null,
 			);
@@ -847,37 +907,61 @@ window.__ModuleLoader__.load({
 					loading.className = "mxu_rl_empty";
 					loading.textContent = "正在读取会话…";
 					picker.appendChild(loading);
-				} else if (Array.isArray(opts.candidates) && opts.candidates.length > 0) {
-					opts.candidates.forEach(function (candidate) {
-						const item = document.createElement("button");
-						item.type = "button";
-						item.className = "mxu_rl_pick_item";
-						item.title = candidate.sessionId;
-						const name = document.createElement("span");
-						name.className = "mxu_rl_pick_name";
-						name.textContent = candidate.title || shortSession(candidate.sessionId);
-						item.appendChild(name);
-						if (candidate.workspace) {
-							const ws = document.createElement("span");
-							ws.className = "mxu_rl_item_ws";
-							ws.textContent = candidate.workspace;
-							ws.title = candidate.workspace;
-							item.appendChild(ws);
-						}
-						const plus = document.createElement("span");
-						plus.className = "mxu_rl_pick_add";
-						plus.textContent = "+";
-						item.appendChild(plus);
-						item.addEventListener("click", function () {
-							if (typeof opts.onAddSession === "function") opts.onAddSession(candidate.sessionId);
-						});
-						picker.appendChild(item);
-					});
 				} else {
-					const empty = document.createElement("div");
-					empty.className = "mxu_rl_empty";
-					empty.textContent = "没有可添加的会话";
-					picker.appendChild(empty);
+					const groups = groupCandidates(opts.candidates);
+					if (groups.length === 0) {
+						const empty = document.createElement("div");
+						empty.className = "mxu_rl_empty";
+						empty.textContent = "没有可添加的会话";
+						picker.appendChild(empty);
+					} else {
+						const expandedWorkspaces = Array.isArray(opts.expandedWorkspaces) ? opts.expandedWorkspaces : [];
+						groups.forEach(function (group) {
+							const expanded = expandedWorkspaces.indexOf(group.key) >= 0;
+							const groupEl = document.createElement("div");
+							groupEl.className = "mxu_rl_group";
+							const head = document.createElement("button");
+							head.type = "button";
+							head.className = "mxu_rl_group_head";
+							const chev = document.createElement("span");
+							chev.className = "mxu_rl_group_chev";
+							chev.textContent = expanded ? "▾" : "▸";
+							head.appendChild(chev);
+							const name = document.createElement("span");
+							name.className = "mxu_rl_group_name";
+							name.textContent = group.title;
+							head.appendChild(name);
+							const count = document.createElement("span");
+							count.className = "mxu_rl_group_count";
+							count.textContent = String(group.items.length);
+							head.appendChild(count);
+							head.addEventListener("click", function () {
+								if (typeof opts.onToggleWorkspace === "function") opts.onToggleWorkspace(group.key);
+							});
+							groupEl.appendChild(head);
+							if (expanded) {
+								group.items.forEach(function (candidate) {
+									const item = document.createElement("button");
+									item.type = "button";
+									item.className = "mxu_rl_pick_item";
+									item.title = candidate.sessionId;
+									const itemName = document.createElement("span");
+									itemName.className = "mxu_rl_pick_name";
+									itemName.textContent = candidate.title || shortSession(candidate.sessionId);
+									item.appendChild(itemName);
+									const plus = document.createElement("span");
+									plus.className = "mxu_rl_pick_add";
+									plus.textContent = "+";
+									item.appendChild(plus);
+									item.addEventListener("click", function () {
+										if (typeof opts.onAddSession === "function") opts.onAddSession(candidate.sessionId);
+									});
+									groupEl.appendChild(item);
+								});
+							}
+							picker.appendChild(groupEl);
+						});
+					}
 				}
 				rl.appendChild(picker);
 			}

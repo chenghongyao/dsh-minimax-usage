@@ -49,7 +49,7 @@ export const apply = (ctx) => {
             return undefined;
         }
     };
-    const workspaceOf = (sessionId) => {
+    const workspaceInfoOf = (sessionId) => {
         try {
             const registry = context.get("workspaceRegistry");
             const workspaces = registry?.list?.();
@@ -59,13 +59,16 @@ export const apply = (ctx) => {
                 const sessionIds = workspace?.sessionIds;
                 if (!Array.isArray(sessionIds) || !sessionIds.includes(sessionId))
                     continue;
-                if (typeof workspace.title === "string" && workspace.title !== "")
-                    return workspace.title;
+                const id = typeof workspace.id === "string" && workspace.id !== "" ? workspace.id : undefined;
+                if (typeof workspace.title === "string" && workspace.title !== "") {
+                    return { ...(id === undefined ? {} : { id }), title: workspace.title };
+                }
                 if (typeof workspace.path !== "string" || workspace.path === "")
                     return undefined;
                 const segments = workspace.path.split(/[\\/]/).filter((segment) => segment !== "");
                 const last = segments.at(-1);
-                return last !== undefined ? last : workspace.path;
+                const title = last !== undefined ? last : workspace.path;
+                return { ...(id === undefined ? {} : { id }), title };
             }
         }
         catch {
@@ -73,12 +76,18 @@ export const apply = (ctx) => {
         }
         return undefined;
     };
+    const workspaceOf = (sessionId) => workspaceInfoOf(sessionId)?.title;
     const candidateOf = (sessionId, title) => {
-        const workspace = workspaceOf(sessionId);
+        const workspace = workspaceInfoOf(sessionId);
         return {
             sessionId,
             ...(title === undefined ? {} : { title }),
-            ...(workspace === undefined ? {} : { workspace }),
+            ...(workspace === undefined
+                ? {}
+                : {
+                    workspace: workspace.title,
+                    ...(workspace.id === undefined ? {} : { workspaceId: workspace.id }),
+                }),
         };
     };
     /** Sessions offered by the picker: every visible top-level Session, newest activity first. */

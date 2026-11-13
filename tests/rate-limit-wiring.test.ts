@@ -200,7 +200,7 @@ describe("rate-limit wiring", () => {
         }),
       },
       workspaceRegistry: {
-        list: () => [{ title: "工作区 X", path: "/work/x", sessionIds: ["session-x"] }],
+        list: () => [{ id: "ws-1", title: "工作区 X", path: "/work/x", sessionIds: ["session-x"] }],
       },
     });
     try {
@@ -209,7 +209,7 @@ describe("rate-limit wiring", () => {
       });
       expect(candidates.status).toBe(200);
       expect(candidates.body["items"]).toEqual([
-        { sessionId: "session-x", title: "会话 X", workspace: "工作区 X" },
+        { sessionId: "session-x", title: "会话 X", workspace: "工作区 X", workspaceId: "ws-1" },
         { sessionId: "session-y" },
       ]);
 

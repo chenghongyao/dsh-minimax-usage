@@ -55,6 +55,7 @@ interface SessionTitleLike {
 }
 
 interface WorkspaceLike {
+  id?: string;
   title?: string;
   path?: string;
   sessionIds?: string[];
@@ -79,6 +80,8 @@ interface SessionCandidate {
   sessionId: string;
   title?: string;
   workspace?: string;
+  /** Stable Workspace identity, used by the picker to group rows. */
+  workspaceId?: string;
 }
 
 /**
@@ -111,7 +114,7 @@ export const apply = (ctx: unknown): (() => void) => {
     }
   };
 
-  const workspaceOf = (sessionId: string): string | undefined => {
+  const workspaceInfoOf = (sessionId: string): { id?: string; title: string } | undefined => {
     try {
       const registry = context.get<WorkspaceRegistryLike>("workspaceRegistry");
       const workspaces = registry?.list?.();
@@ -119,11 +122,15 @@ export const apply = (ctx: unknown): (() => void) => {
       for (const workspace of workspaces) {
         const sessionIds = workspace?.sessionIds;
         if (!Array.isArray(sessionIds) || !sessionIds.includes(sessionId)) continue;
-        if (typeof workspace.title === "string" && workspace.title !== "") return workspace.title;
+        const id = typeof workspace.id === "string" && workspace.id !== "" ? workspace.id : undefined;
+        if (typeof workspace.title === "string" && workspace.title !== "") {
+          return { ...(id === undefined ? {} : { id }), title: workspace.title };
+        }
         if (typeof workspace.path !== "string" || workspace.path === "") return undefined;
         const segments = workspace.path.split(/[\\/]/).filter((segment) => segment !== "");
         const last = segments.at(-1);
-        return last !== undefined ? last : workspace.path;
+        const title = last !== undefined ? last : workspace.path;
+        return { ...(id === undefined ? {} : { id }), title };
       }
     } catch {
       // Workspace registry unavailable or not initialized yet.
@@ -131,12 +138,19 @@ export const apply = (ctx: unknown): (() => void) => {
     return undefined;
   };
 
+  const workspaceOf = (sessionId: string): string | undefined => workspaceInfoOf(sessionId)?.title;
+
   const candidateOf = (sessionId: string, title: string | undefined): SessionCandidate => {
-    const workspace = workspaceOf(sessionId);
+    const workspace = workspaceInfoOf(sessionId);
     return {
       sessionId,
       ...(title === undefined ? {} : { title }),
-      ...(workspace === undefined ? {} : { workspace }),
+      ...(workspace === undefined
+        ? {}
+        : {
+            workspace: workspace.title,
+            ...(workspace.id === undefined ? {} : { workspaceId: workspace.id }),
+          }),
     };
   };
 
