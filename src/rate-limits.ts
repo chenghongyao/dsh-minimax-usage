@@ -1,8 +1,10 @@
-import { RESET_REFRESH_DELAY_MS, systemClock, type Clock } from "./refresh.js";
+import { systemClock, type Clock } from "./refresh.js";
 import type { RateLimitSessionView, Region } from "./types.js";
 
 /** Fallback wait when no 5h-window end is known: assume one full window. */
 export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+/** Grace past the 5h window end: quota propagation can lag the reset moment. */
+export const CONTINUE_DELAY_MS = 2 * 60 * 1000;
 /** Retry cadence after a failed delivery (Session gone, Agent not resumable, ...). */
 export const DELIVERY_RETRY_MS = 5 * 60 * 1000;
 /** Give up after this many failed deliveries so a dead Session cannot retry forever. */
@@ -24,6 +26,8 @@ export interface RateLimitWatcherOptions {
   readonly resolveResetAt?: () => number | undefined;
   /** Live Session title lookup used when rendering the list. */
   readonly titleFor?: (sessionId: string) => string | undefined;
+  /** Live Workspace title lookup used when rendering the list. */
+  readonly workspaceFor?: (sessionId: string) => string | undefined;
   /** Diagnostics sink; defaults to `console.warn`. */
   readonly warn?: (message: string) => void;
 }
@@ -88,6 +92,7 @@ export class RateLimitWatcher {
   private readonly persistFn: RateLimitWatcherOptions["persist"];
   private readonly resolveResetAt: RateLimitWatcherOptions["resolveResetAt"];
   private readonly titleFor: RateLimitWatcherOptions["titleFor"];
+  private readonly workspaceFor: RateLimitWatcherOptions["workspaceFor"];
   private readonly warn: (message: string) => void;
   private readonly records = new Map<string, RateLimitSessionView>();
   private readonly timers = new Map<string, () => void>();
@@ -101,6 +106,7 @@ export class RateLimitWatcher {
     this.persistFn = options.persist;
     this.resolveResetAt = options.resolveResetAt;
     this.titleFor = options.titleFor;
+    this.workspaceFor = options.workspaceFor;
     this.warn = options.warn ?? ((message) => console.warn(`[dsh-minimax-usage] ${message}`));
   }
 
@@ -126,6 +132,7 @@ export class RateLimitWatcher {
   record(input: {
     sessionId: string;
     title?: string;
+    workspace?: string;
     provider?: string;
     region: Region;
     errorAt?: number;
@@ -135,10 +142,11 @@ export class RateLimitWatcher {
     const errorAt = input.errorAt ?? now;
     const resetAt = this.resolveResetAt?.();
     const known = resetAt !== undefined && Number.isFinite(resetAt) && resetAt > now;
-    const sendAt = (known ? resetAt : now + FIVE_HOURS_MS) + RESET_REFRESH_DELAY_MS;
+    const sendAt = (known ? resetAt : now + FIVE_HOURS_MS) + CONTINUE_DELAY_MS;
     this.records.set(input.sessionId, {
       sessionId: input.sessionId,
       ...(input.title === undefined || input.title === "" ? {} : { title: input.title }),
+      ...(input.workspace === undefined || input.workspace === "" ? {} : { workspace: input.workspace }),
       provider: input.provider ?? providerForRegion(input.region),
       region: input.region,
       errorAt,
@@ -165,12 +173,17 @@ export class RateLimitWatcher {
     return count;
   }
 
-  /** Browser-facing list, soonest delivery first, with fresh titles where available. */
+  /** Browser-facing list, soonest delivery first, with fresh titles/workspaces where available. */
   list(): RateLimitSessionView[] {
     const items: RateLimitSessionView[] = [];
     for (const record of this.records.values()) {
       const title = this.titleFor?.(record.sessionId);
-      items.push(title !== undefined && title !== "" ? { ...record, title } : { ...record });
+      const workspace = this.workspaceFor?.(record.sessionId);
+      items.push({
+        ...record,
+        ...(title === undefined || title === "" ? {} : { title }),
+        ...(workspace === undefined || workspace === "" ? {} : { workspace }),
+      });
     }
     items.sort((a, b) => a.sendAt - b.sendAt || a.sessionId.localeCompare(b.sessionId));
     return items;

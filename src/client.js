@@ -78,9 +78,18 @@ window.__ModuleLoader__.load({
 			".mxu_rl_clear:hover{color:var(--dsw-alias-state-error-primary,#fca5a5);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
 			".mxu_rl_item{display:flex;align-items:center;gap:8px;padding:3px 2px}",
 			".mxu_rl_item_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font-size:11px}",
+			".mxu_rl_item_ws{flex:none;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 5px;border-radius:5px;background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.05));color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10px}",
 			".mxu_rl_item_when{flex:none;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px;font-variant-numeric:tabular-nums}",
 			".mxu_rl_del{appearance:none;flex:none;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font:inherit;font-size:13px;line-height:1;cursor:pointer;padding:0}",
 			".mxu_rl_del:hover{color:var(--dsw-alias-state-error-primary,#fca5a5);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_add{appearance:none;border:0;background:transparent;color:var(--dsw-alias-state-info-primary,#93c5fd);font:inherit;font-size:10.5px;cursor:pointer;padding:2px 4px;border-radius:5px}",
+			".mxu_rl_add:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_empty{padding:4px 2px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px}",
+			".mxu_rl_pick{display:flex;flex-direction:column;max-height:132px;overflow:auto;margin:2px 0 4px;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.06));border-radius:8px;padding:2px}",
+			".mxu_rl_pick_item{appearance:none;display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font:inherit;font-size:11px;text-align:left;cursor:pointer;padding:4px 6px;border-radius:6px}",
+			".mxu_rl_pick_item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_pick_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+			".mxu_rl_pick_add{flex:none;color:var(--dsw-alias-state-info-primary,#93c5fd);font-size:12px}",
 			".mxu_rl_hint{margin-top:4px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10px;line-height:1.4}",
 
 			// === mobile: tap-toggled bottom sheet (iOS-style: large radius, sheet at bottom) ===
@@ -321,32 +330,61 @@ window.__ModuleLoader__.load({
 							: detailMetric("本周窗口", model.weeklyRemainingPercent, model.included, formatCountdown(model.weeklyEndAt)),
 					)),
 				)),
-				rateLimits.length > 0 ? createElement("div", { className: "mxu_rl" },
+				createElement("div", { className: "mxu_rl" },
 					createElement("div", { className: "mxu_rl_head" },
 						createElement("span", { className: "mxu_rl_title" }, "限流后自动继续"),
 						createElement("button", {
+							type: "button",
+							className: "mxu_rl_add",
+							onClick: () => {
+								if (props.onTogglePicker) props.onTogglePicker();
+							},
+						}, props.pickerOpen ? "取消" : "添加"),
+						rateLimits.length > 0 ? createElement("button", {
 							type: "button",
 							className: "mxu_rl_clear",
 							onClick: () => {
 								if (props.onClearRateLimits) props.onClearRateLimits();
 							},
-						}, "清除全部"),
+						}, "清除全部") : null,
 					),
-					rateLimits.map((item) => createElement("div", { className: "mxu_rl_item", key: item.sessionId },
-						createElement("span", { className: "mxu_rl_item_name", title: item.sessionId }, item.title || shortSession(item.sessionId)),
-						createElement("span", { className: "mxu_rl_item_when" }, sendWhen(item.sendAt)),
-						createElement("button", {
-							type: "button",
-							className: "mxu_rl_del",
-							"aria-label": "不再向该会话发送继续消息",
-							onClick: (event) => {
-								if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-								if (props.onRemoveRateLimit) props.onRemoveRateLimit(item.sessionId);
-							},
-						}, "×"),
-					)),
-					createElement("div", { className: "mxu_rl_hint" }, "5 小时限额重置后自动发送「继续」"),
-				) : null,
+					rateLimits.length === 0
+						? createElement("div", { className: "mxu_rl_empty" }, "暂无记录，点「添加」选择现有会话")
+						: rateLimits.map((item) => createElement("div", { className: "mxu_rl_item", key: item.sessionId },
+							createElement("span", { className: "mxu_rl_item_name", title: item.sessionId }, item.title || shortSession(item.sessionId)),
+							item.workspace ? createElement("span", { className: "mxu_rl_item_ws", title: item.workspace }, item.workspace) : null,
+							createElement("span", { className: "mxu_rl_item_when" }, sendWhen(item.sendAt)),
+							createElement("button", {
+								type: "button",
+								className: "mxu_rl_del",
+								"aria-label": "不再向该会话发送继续消息",
+								onClick: (event) => {
+									if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+									if (props.onRemoveRateLimit) props.onRemoveRateLimit(item.sessionId);
+								},
+							}, "×"),
+						)),
+					props.pickerOpen ? createElement("div", { className: "mxu_rl_pick" },
+						props.pickerLoading
+							? createElement("div", { className: "mxu_rl_empty" }, "正在读取会话…")
+							: (Array.isArray(props.candidates) && props.candidates.length > 0
+								? props.candidates.map((candidate) => createElement("button", {
+									type: "button",
+									key: candidate.sessionId,
+									className: "mxu_rl_pick_item",
+									title: candidate.sessionId,
+									onClick: () => {
+										if (props.onAddSession) props.onAddSession(candidate.sessionId);
+									},
+								},
+									createElement("span", { className: "mxu_rl_pick_name" }, candidate.title || shortSession(candidate.sessionId)),
+									candidate.workspace ? createElement("span", { className: "mxu_rl_item_ws" }, candidate.workspace) : null,
+									createElement("span", { className: "mxu_rl_pick_add" }, "+"),
+								))
+								: createElement("div", { className: "mxu_rl_empty" }, "没有可添加的会话")),
+					) : null,
+					createElement("div", { className: "mxu_rl_hint" }, "5 小时限额重置 2 分钟后自动发送「继续」"),
+				),
 				createElement("div", { className: "mxu_inline_hint" }, "点击立即刷新 · 仅当前 MiniMax Token Plan provider 显示"),
 			);
 		}
@@ -386,6 +424,9 @@ window.__ModuleLoader__.load({
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
 			const rateLimits = data && Array.isArray(data.rateLimits) ? data.rateLimits : [];
+			const [pickerOpen, setPickerOpen] = react.useState(false);
+			const [pickerLoading, setPickerLoading] = react.useState(false);
+			const [candidates, setCandidates] = react.useState([]);
 			const removeRateLimit = react.useCallback((sessionId) => {
 				void api("/rate-limits/remove", { method: "POST", body: JSON.stringify({ sessionId }) })
 					.then(function () { return load(false); });
@@ -394,6 +435,33 @@ window.__ModuleLoader__.load({
 				void api("/rate-limits/clear", { method: "POST", body: JSON.stringify({}) })
 					.then(function () { return load(false); });
 			}, [load]);
+			const togglePicker = react.useCallback(function () {
+				setPickerOpen(function (open) { return !open; });
+			}, []);
+			const addSession = react.useCallback(function (sessionId) {
+				void api("/rate-limits/add", { method: "POST", body: JSON.stringify({ sessionId }) })
+					.then(function () {
+						setPickerOpen(false);
+						return load(false);
+					});
+			}, [load]);
+			// 打开选择器时拉取可添加的会话列表；关闭或切换时取消旧请求的结果。
+			react.useEffect(function () {
+				if (!pickerOpen) return undefined;
+				let cancelled = false;
+				setPickerLoading(true);
+				void api("/rate-limits/candidates").then(function (response) {
+					if (cancelled) return;
+					const items = response && response.body && Array.isArray(response.body.items) ? response.body.items : [];
+					setCandidates(items);
+					setPickerLoading(false);
+				}).catch(function () {
+					if (!cancelled) setPickerLoading(false);
+				});
+				return function () {
+					cancelled = true;
+				};
+			}, [pickerOpen]);
 			const selected = disabled
 				? { account: undefined, model: undefined }
 				: accountForSelection(accounts, stableRegion, current && current.model);
@@ -424,7 +492,7 @@ window.__ModuleLoader__.load({
 			// 的前提下单独 update。
 			const panelRef = react.useRef(null);
 			const latestArgsRef = react.useRef(null);
-			latestArgsRef.current = { region, accounts, data, busy, closeMobile, rateLimits, removeRateLimit, clearRateLimits };
+			latestArgsRef.current = { region, accounts, data, busy, closeMobile, rateLimits, removeRateLimit, clearRateLimits, pickerOpen, pickerLoading, candidates, togglePicker, addSession };
 
 			react.useEffect(function () {
 				if (!usePortal) return undefined;
@@ -454,6 +522,11 @@ window.__ModuleLoader__.load({
 						rateLimits: args.rateLimits,
 						onRemoveRateLimit: args.removeRateLimit,
 						onClearRateLimits: args.clearRateLimits,
+						pickerOpen: args.pickerOpen,
+						pickerLoading: args.pickerLoading,
+						candidates: args.candidates,
+						onTogglePicker: args.togglePicker,
+						onAddSession: args.addSession,
 					});
 				};
 				renderInto(panel, latestArgsRef.current);
@@ -481,10 +554,15 @@ window.__ModuleLoader__.load({
 						rateLimits: latestArgsRef.current.rateLimits,
 						onRemoveRateLimit: latestArgsRef.current.removeRateLimit,
 						onClearRateLimits: latestArgsRef.current.clearRateLimits,
+						pickerOpen: latestArgsRef.current.pickerOpen,
+						pickerLoading: latestArgsRef.current.pickerLoading,
+						candidates: latestArgsRef.current.candidates,
+						onTogglePicker: latestArgsRef.current.togglePicker,
+						onAddSession: latestArgsRef.current.addSession,
 					});
 				};
 				renderInto(panelRef.current);
-			}, [region, accounts, data, busy, usePortal]);
+			}, [region, accounts, data, busy, usePortal, pickerOpen, pickerLoading, candidates]);
 
 			// 弹窗内倒计时跟主按钮同步：每 30s 重新渲染 panel 内容。
 			react.useEffect(function () {
@@ -502,6 +580,11 @@ window.__ModuleLoader__.load({
 						rateLimits: latestArgsRef.current.rateLimits,
 						onRemoveRateLimit: latestArgsRef.current.removeRateLimit,
 						onClearRateLimits: latestArgsRef.current.clearRateLimits,
+						pickerOpen: latestArgsRef.current.pickerOpen,
+						pickerLoading: latestArgsRef.current.pickerLoading,
+						candidates: latestArgsRef.current.candidates,
+						onTogglePicker: latestArgsRef.current.togglePicker,
+						onAddSession: latestArgsRef.current.addSession,
 					});
 				}, 30000);
 				return () => clearInterval(tickId);
@@ -580,6 +663,11 @@ window.__ModuleLoader__.load({
 					rateLimits,
 					onRemoveRateLimit: removeRateLimit,
 					onClearRateLimits: clearRateLimits,
+					pickerOpen,
+					pickerLoading,
+					candidates,
+					onTogglePicker: togglePicker,
+					onAddSession: addSession,
 				}) : null,
 			);
 		}
@@ -686,17 +774,25 @@ window.__ModuleLoader__.load({
 				root.appendChild(card);
 			});
 
-			// 限流后自动继续：记录中的会话列表（5 小时限额重置后自动发送「继续」）
+			// 限流后自动继续：记录列表 + 添加现有会话
 			const rateLimits = Array.isArray(opts.rateLimits) ? opts.rateLimits : [];
+			const rl = document.createElement("div");
+			rl.className = "mxu_rl";
+			const rlHead = document.createElement("div");
+			rlHead.className = "mxu_rl_head";
+			const rlTitle = document.createElement("span");
+			rlTitle.className = "mxu_rl_title";
+			rlTitle.textContent = "限流后自动继续";
+			rlHead.appendChild(rlTitle);
+			const addButton = document.createElement("button");
+			addButton.type = "button";
+			addButton.className = "mxu_rl_add";
+			addButton.textContent = opts.pickerOpen ? "取消" : "添加";
+			addButton.addEventListener("click", function () {
+				if (typeof opts.onTogglePicker === "function") opts.onTogglePicker();
+			});
+			rlHead.appendChild(addButton);
 			if (rateLimits.length > 0) {
-				const rl = document.createElement("div");
-				rl.className = "mxu_rl";
-				const rlHead = document.createElement("div");
-				rlHead.className = "mxu_rl_head";
-				const rlTitle = document.createElement("span");
-				rlTitle.className = "mxu_rl_title";
-				rlTitle.textContent = "限流后自动继续";
-				rlHead.appendChild(rlTitle);
 				const clearAll = document.createElement("button");
 				clearAll.type = "button";
 				clearAll.className = "mxu_rl_clear";
@@ -705,36 +801,91 @@ window.__ModuleLoader__.load({
 					if (typeof opts.onClearRateLimits === "function") opts.onClearRateLimits();
 				});
 				rlHead.appendChild(clearAll);
-				rl.appendChild(rlHead);
-				rateLimits.forEach(function (item) {
-					const row = document.createElement("div");
-					row.className = "mxu_rl_item";
-					const rowName = document.createElement("span");
-					rowName.className = "mxu_rl_item_name";
-					rowName.textContent = item.title || shortSession(item.sessionId);
-					rowName.title = item.sessionId;
-					row.appendChild(rowName);
-					const rowWhen = document.createElement("span");
-					rowWhen.className = "mxu_rl_item_when";
-					rowWhen.textContent = sendWhen(item.sendAt);
-					row.appendChild(rowWhen);
-					const del = document.createElement("button");
-					del.type = "button";
-					del.className = "mxu_rl_del";
-					del.textContent = "×";
-					del.setAttribute("aria-label", "不再向该会话发送继续消息");
-					del.addEventListener("click", function () {
-						if (typeof opts.onRemoveRateLimit === "function") opts.onRemoveRateLimit(item.sessionId);
-					});
-					row.appendChild(del);
-					rl.appendChild(row);
-				});
-				const rlHint = document.createElement("div");
-				rlHint.className = "mxu_rl_hint";
-				rlHint.textContent = "5 小时限额重置后自动发送「继续」";
-				rl.appendChild(rlHint);
-				root.appendChild(rl);
 			}
+			rl.appendChild(rlHead);
+			if (rateLimits.length === 0) {
+				const empty = document.createElement("div");
+				empty.className = "mxu_rl_empty";
+				empty.textContent = "暂无记录，点「添加」选择现有会话";
+				rl.appendChild(empty);
+			}
+			rateLimits.forEach(function (item) {
+				const row = document.createElement("div");
+				row.className = "mxu_rl_item";
+				const rowName = document.createElement("span");
+				rowName.className = "mxu_rl_item_name";
+				rowName.textContent = item.title || shortSession(item.sessionId);
+				rowName.title = item.sessionId;
+				row.appendChild(rowName);
+				if (item.workspace) {
+					const rowWs = document.createElement("span");
+					rowWs.className = "mxu_rl_item_ws";
+					rowWs.textContent = item.workspace;
+					rowWs.title = item.workspace;
+					row.appendChild(rowWs);
+				}
+				const rowWhen = document.createElement("span");
+				rowWhen.className = "mxu_rl_item_when";
+				rowWhen.textContent = sendWhen(item.sendAt);
+				row.appendChild(rowWhen);
+				const del = document.createElement("button");
+				del.type = "button";
+				del.className = "mxu_rl_del";
+				del.textContent = "×";
+				del.setAttribute("aria-label", "不再向该会话发送继续消息");
+				del.addEventListener("click", function () {
+					if (typeof opts.onRemoveRateLimit === "function") opts.onRemoveRateLimit(item.sessionId);
+				});
+				row.appendChild(del);
+				rl.appendChild(row);
+			});
+			if (opts.pickerOpen) {
+				const picker = document.createElement("div");
+				picker.className = "mxu_rl_pick";
+				if (opts.pickerLoading) {
+					const loading = document.createElement("div");
+					loading.className = "mxu_rl_empty";
+					loading.textContent = "正在读取会话…";
+					picker.appendChild(loading);
+				} else if (Array.isArray(opts.candidates) && opts.candidates.length > 0) {
+					opts.candidates.forEach(function (candidate) {
+						const item = document.createElement("button");
+						item.type = "button";
+						item.className = "mxu_rl_pick_item";
+						item.title = candidate.sessionId;
+						const name = document.createElement("span");
+						name.className = "mxu_rl_pick_name";
+						name.textContent = candidate.title || shortSession(candidate.sessionId);
+						item.appendChild(name);
+						if (candidate.workspace) {
+							const ws = document.createElement("span");
+							ws.className = "mxu_rl_item_ws";
+							ws.textContent = candidate.workspace;
+							ws.title = candidate.workspace;
+							item.appendChild(ws);
+						}
+						const plus = document.createElement("span");
+						plus.className = "mxu_rl_pick_add";
+						plus.textContent = "+";
+						item.appendChild(plus);
+						item.addEventListener("click", function () {
+							if (typeof opts.onAddSession === "function") opts.onAddSession(candidate.sessionId);
+						});
+						picker.appendChild(item);
+					});
+				} else {
+					const empty = document.createElement("div");
+					empty.className = "mxu_rl_empty";
+					empty.textContent = "没有可添加的会话";
+					picker.appendChild(empty);
+				}
+				rl.appendChild(picker);
+			}
+			const rlHint = document.createElement("div");
+			rlHint.className = "mxu_rl_hint";
+			rlHint.textContent = "5 小时限额重置 2 分钟后自动发送「继续」";
+			rl.appendChild(rlHint);
+			root.appendChild(rl);
 
 			// 关闭按钮（移动端专用；使用 DSH 主蓝，保持与 DSH 整体视觉一致）
 			const close = document.createElement("button");

@@ -131,6 +131,9 @@ describe("rate-limit wiring", () => {
   it("records a MiniMax rate-limit error and exposes it on /status", async () => {
     const wiring = boot({
       dshHomePath: (...segments: string[]) => join(dir, ...segments),
+      workspaceRegistry: {
+        list: () => [{ title: "我的工作区", path: "/work/my-project", sessionIds: ["session-a"] }],
+      },
     });
     try {
       wiring.emit("llm/stream", { provider: "minimax-cn", sessionId: "session-a" }, () => "chunk");
@@ -148,6 +151,7 @@ describe("rate-limit wiring", () => {
       expect(rateLimits[0]?.["sessionId"]).toBe("session-a");
       expect(rateLimits[0]?.["region"]).toBe("cn");
       expect(rateLimits[0]?.["provider"]).toBe("minimax-cn");
+      expect(rateLimits[0]?.["workspace"]).toBe("我的工作区");
       expect(rateLimits[0]?.["sendAt"]).toBeGreaterThan(Date.now());
 
       // The record reaches disk so a Host restart can still deliver it.
@@ -178,6 +182,60 @@ describe("rate-limit wiring", () => {
 
       const status = await callRoute(wiring, "/minimax-usage/api/status", { method: "GET" });
       expect(status.body["rateLimits"]).toEqual([]);
+    } finally {
+      wiring.dispose();
+    }
+  });
+
+  it("lists existing Sessions and adds one to the continue queue", async () => {
+    const wiring = boot({
+      dshHomePath: (...segments: string[]) => join(dir, ...segments),
+      sessionController: {
+        list: async () => ({
+          items: [
+            { sessionId: "session-x", origin: "user", projections: { values: { title: "会话 X" } } },
+            { sessionId: "sub-session", origin: "subagent", projections: { values: { title: "子代理" } } },
+            { sessionId: "session-y", origin: "user", projections: { values: { title: null } } },
+          ],
+        }),
+      },
+      workspaceRegistry: {
+        list: () => [{ title: "工作区 X", path: "/work/x", sessionIds: ["session-x"] }],
+      },
+    });
+    try {
+      const candidates = await callRoute(wiring, "/minimax-usage/api/rate-limits/candidates", {
+        method: "GET",
+      });
+      expect(candidates.status).toBe(200);
+      expect(candidates.body["items"]).toEqual([
+        { sessionId: "session-x", title: "会话 X", workspace: "工作区 X" },
+        { sessionId: "session-y" },
+      ]);
+
+      const added = await callRoute(wiring, "/minimax-usage/api/rate-limits/add", {
+        method: "POST",
+        body: { sessionId: "session-x" },
+      });
+      expect(added.status).toBe(200);
+      expect(added.body["added"]).toBe(true);
+      const rateLimits = added.body["rateLimits"] as Array<Record<string, unknown>>;
+      expect(rateLimits).toHaveLength(1);
+      expect(rateLimits[0]?.["sessionId"]).toBe("session-x");
+      expect(rateLimits[0]?.["title"]).toBe("会话 X");
+      expect(rateLimits[0]?.["workspace"]).toBe("工作区 X");
+
+      // A recorded Session drops out of the picker until it is removed again.
+      const after = await callRoute(wiring, "/minimax-usage/api/rate-limits/candidates", {
+        method: "GET",
+      });
+      expect(after.body["items"]).toEqual([{ sessionId: "session-y" }]);
+
+      const missing = await callRoute(wiring, "/minimax-usage/api/rate-limits/add", {
+        method: "POST",
+        body: { sessionId: "does-not-exist" },
+      });
+      expect(missing.status).toBe(404);
     } finally {
       wiring.dispose();
     }

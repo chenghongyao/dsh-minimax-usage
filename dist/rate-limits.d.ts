@@ -2,6 +2,8 @@ import { type Clock } from "./refresh.js";
 import type { RateLimitSessionView, Region } from "./types.js";
 /** Fallback wait when no 5h-window end is known: assume one full window. */
 export declare const FIVE_HOURS_MS: number;
+/** Grace past the 5h window end: quota propagation can lag the reset moment. */
+export declare const CONTINUE_DELAY_MS: number;
 /** Retry cadence after a failed delivery (Session gone, Agent not resumable, ...). */
 export declare const DELIVERY_RETRY_MS: number;
 /** Give up after this many failed deliveries so a dead Session cannot retry forever. */
@@ -19,6 +21,8 @@ export interface RateLimitWatcherOptions {
     readonly resolveResetAt?: () => number | undefined;
     /** Live Session title lookup used when rendering the list. */
     readonly titleFor?: (sessionId: string) => string | undefined;
+    /** Live Workspace title lookup used when rendering the list. */
+    readonly workspaceFor?: (sessionId: string) => string | undefined;
     /** Diagnostics sink; defaults to `console.warn`. */
     readonly warn?: (message: string) => void;
 }
@@ -44,6 +48,7 @@ export declare class RateLimitWatcher {
     private readonly persistFn;
     private readonly resolveResetAt;
     private readonly titleFor;
+    private readonly workspaceFor;
     private readonly warn;
     private readonly records;
     private readonly timers;
@@ -62,6 +67,7 @@ export declare class RateLimitWatcher {
     record(input: {
         sessionId: string;
         title?: string;
+        workspace?: string;
         provider?: string;
         region: Region;
         errorAt?: number;
@@ -70,7 +76,7 @@ export declare class RateLimitWatcher {
     remove(sessionId: string): boolean;
     /** Remove every Session record and cancel all pending deliveries. */
     clear(): number;
-    /** Browser-facing list, soonest delivery first, with fresh titles where available. */
+    /** Browser-facing list, soonest delivery first, with fresh titles/workspaces where available. */
     list(): RateLimitSessionView[];
     /** Load persisted records after a Host restart and arm each remaining delivery. */
     hydrate(records: readonly RateLimitSessionView[]): void;

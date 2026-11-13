@@ -46,11 +46,39 @@ interface SessionControllerLike {
 
 interface SessionsLike {
   get?(sessionId: string): SessionLike | undefined;
+  list?(): SessionLike[];
   flush?(session: unknown): Promise<boolean>;
 }
 
 interface SessionTitleLike {
   get?(session: SessionLike): { title?: string } | undefined;
+}
+
+interface WorkspaceLike {
+  title?: string;
+  path?: string;
+  sessionIds?: string[];
+}
+
+interface WorkspaceRegistryLike {
+  list?(): WorkspaceLike[];
+}
+
+interface SessionSummaryLike {
+  sessionId?: unknown;
+  origin?: unknown;
+  projections?: { values?: Record<string, unknown> };
+}
+
+interface SessionListLike {
+  list?(request: unknown, signal?: AbortSignal): Promise<{ items?: SessionSummaryLike[] } | undefined>;
+}
+
+/** One addable Session row offered by the "添加现有会话" picker. */
+interface SessionCandidate {
+  sessionId: string;
+  title?: string;
+  workspace?: string;
 }
 
 /**
@@ -81,6 +109,85 @@ export const apply = (ctx: unknown): (() => void) => {
     } catch {
       return undefined;
     }
+  };
+
+  const workspaceOf = (sessionId: string): string | undefined => {
+    try {
+      const registry = context.get<WorkspaceRegistryLike>("workspaceRegistry");
+      const workspaces = registry?.list?.();
+      if (!Array.isArray(workspaces)) return undefined;
+      for (const workspace of workspaces) {
+        const sessionIds = workspace?.sessionIds;
+        if (!Array.isArray(sessionIds) || !sessionIds.includes(sessionId)) continue;
+        if (typeof workspace.title === "string" && workspace.title !== "") return workspace.title;
+        if (typeof workspace.path !== "string" || workspace.path === "") return undefined;
+        const segments = workspace.path.split(/[\\/]/).filter((segment) => segment !== "");
+        const last = segments.at(-1);
+        return last !== undefined ? last : workspace.path;
+      }
+    } catch {
+      // Workspace registry unavailable or not initialized yet.
+    }
+    return undefined;
+  };
+
+  const candidateOf = (sessionId: string, title: string | undefined): SessionCandidate => {
+    const workspace = workspaceOf(sessionId);
+    return {
+      sessionId,
+      ...(title === undefined ? {} : { title }),
+      ...(workspace === undefined ? {} : { workspace }),
+    };
+  };
+
+  /** Sessions offered by the picker: every visible top-level Session, newest activity first. */
+  const listSessionCandidates = async (exclude: Set<string>): Promise<SessionCandidate[]> => {
+    const candidates: SessionCandidate[] = [];
+    const seen = new Set<string>();
+    const push = (sessionId: string, title: string | undefined): void => {
+      if (sessionId === "" || exclude.has(sessionId) || seen.has(sessionId)) return;
+      seen.add(sessionId);
+      candidates.push(candidateOf(sessionId, title));
+    };
+    const controller = context.get<SessionListLike>("sessionController");
+    if (controller?.list !== undefined) {
+      try {
+        const result = await controller.list({}, undefined);
+        for (const item of result?.items ?? []) {
+          const sessionId = typeof item?.sessionId === "string" ? item.sessionId : undefined;
+          if (sessionId === undefined || item?.origin === "subagent") continue;
+          const title = item?.projections?.values?.["title"];
+          push(sessionId, typeof title === "string" && title !== "" ? title : undefined);
+        }
+      } catch {
+        // Fall through to the live-Session view below.
+      }
+    }
+    if (candidates.length === 0) {
+      const agents = context.get<{ roots?(): AgentLike[] }>("agents");
+      for (const agent of agents?.roots?.() ?? []) {
+        const session = agent?.session;
+        const sessionId = session?.id;
+        if (typeof sessionId === "string" && session?.header?.origin !== "subagent") {
+          push(sessionId, titleOf(session));
+        }
+      }
+      for (const session of context.get<SessionsLike>("sessions")?.list?.() ?? []) {
+        const sessionId = session?.id;
+        if (typeof sessionId === "string" && session?.header?.origin !== "subagent") {
+          push(sessionId, titleOf(session));
+        }
+      }
+    }
+    return candidates.slice(0, 50);
+  };
+
+  const findSessionCandidate = async (sessionId: string): Promise<SessionCandidate | undefined> => {
+    const candidates = await listSessionCandidates(new Set());
+    const match = candidates.find((candidate) => candidate.sessionId === sessionId);
+    if (match !== undefined) return match;
+    const live = context.get<SessionsLike>("sessions")?.get?.(sessionId);
+    return live === undefined ? undefined : candidateOf(sessionId, titleOf(live));
   };
 
   const deliverContinue = async (record: RateLimitSessionView): Promise<void> => {
@@ -128,6 +235,7 @@ export const apply = (ctx: unknown): (() => void) => {
       const sessions = context.get<SessionsLike>("sessions");
       return titleOf(sessions?.get?.(sessionId));
     },
+    workspaceFor: (sessionId) => workspaceOf(sessionId),
   });
   void loadRateLimits(storeFile)
     .then((records) => watcher.hydrate(records))
@@ -191,11 +299,13 @@ export const apply = (ctx: unknown): (() => void) => {
         const observed = watcher.providerOf(sessionId);
         if (observed?.region === undefined) return;
         const title = titleOf(session);
+        const workspace = workspaceOf(sessionId);
         watcher.record({
           sessionId,
           region: observed.region,
           provider: observed.provider ?? providerForRegion(observed.region),
           ...(title === undefined ? {} : { title }),
+          ...(workspace === undefined ? {} : { workspace }),
         });
       } catch (error) {
         console.warn(`[dsh-minimax-usage] failed to record a rate-limit session: ${String(error)}`);
@@ -249,6 +359,25 @@ export const apply = (ctx: unknown): (() => void) => {
         path: "/minimax-usage/api/rate-limits/clear",
         handler: (req, res) => {
           void handleRateLimitClear(req, res, watcher);
+        },
+      });
+      webServer.register({
+        kind: "exact",
+        path: "/minimax-usage/api/rate-limits/candidates",
+        handler: (req, res) => {
+          void handleRateLimitCandidates(req, res, () => {
+            const recorded = new Set(watcher.list().map((item) => item.sessionId));
+            return listSessionCandidates(recorded);
+          });
+        },
+      });
+      webServer.register({
+        kind: "exact",
+        path: "/minimax-usage/api/rate-limits/add",
+        handler: (req, res) => {
+          void handleRateLimitAdd(req, res, watcher, findSessionCandidate, () => {
+            return service.preferredRegion() ?? "cn";
+          });
         },
       });
       console.log("[dsh-minimax-usage] inline usage indicator available on the Web UI");
@@ -350,10 +479,61 @@ async function handleRateLimitClear(
 }
 
 function requirePost(req: unknown, res: unknown): boolean {
+  return requireMethod(req, res, "POST");
+}
+
+function requireMethod(req: unknown, res: unknown, expected: string): boolean {
   const method = String((req as { method?: string }).method ?? "GET").toUpperCase();
-  if (method === "POST") return true;
+  if (method === expected) return true;
   sendJson(res, 405, { error: "method not allowed" });
   return false;
+}
+
+async function handleRateLimitCandidates(
+  req: unknown,
+  res: unknown,
+  list: () => Promise<SessionCandidate[]>,
+): Promise<void> {
+  if (!requireMethod(req, res, "GET")) return;
+  try {
+    sendJson(res, 200, { items: await list() });
+  } catch (error) {
+    sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function handleRateLimitAdd(
+  req: unknown,
+  res: unknown,
+  watcher: RateLimitWatcher,
+  find: (sessionId: string) => Promise<SessionCandidate | undefined>,
+  region: () => string,
+): Promise<void> {
+  if (!requirePost(req, res)) return;
+  try {
+    const body = await readJsonBody(req);
+    const sessionId = body["sessionId"];
+    if (typeof sessionId !== "string" || sessionId === "") {
+      sendJson(res, 400, { error: "sessionId is required" });
+      return;
+    }
+    const candidate = await find(sessionId);
+    if (candidate === undefined) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    const resolvedRegion = region() === "global" ? "global" : "cn";
+    watcher.record({
+      sessionId,
+      region: resolvedRegion,
+      provider: providerForRegion(resolvedRegion),
+      ...(candidate.title === undefined ? {} : { title: candidate.title }),
+      ...(candidate.workspace === undefined ? {} : { workspace: candidate.workspace }),
+    });
+    sendJson(res, 200, { added: true, rateLimits: watcher.list() });
+  } catch (error) {
+    sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function readJsonBody(req: unknown): Promise<Record<string, unknown>> {

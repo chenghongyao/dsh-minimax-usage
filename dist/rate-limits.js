@@ -1,6 +1,8 @@
-import { RESET_REFRESH_DELAY_MS, systemClock } from "./refresh.js";
+import { systemClock } from "./refresh.js";
 /** Fallback wait when no 5h-window end is known: assume one full window. */
 export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+/** Grace past the 5h window end: quota propagation can lag the reset moment. */
+export const CONTINUE_DELAY_MS = 2 * 60 * 1000;
 /** Retry cadence after a failed delivery (Session gone, Agent not resumable, ...). */
 export const DELIVERY_RETRY_MS = 5 * 60 * 1000;
 /** Give up after this many failed deliveries so a dead Session cannot retry forever. */
@@ -56,6 +58,7 @@ export class RateLimitWatcher {
     persistFn;
     resolveResetAt;
     titleFor;
+    workspaceFor;
     warn;
     records = new Map();
     timers = new Map();
@@ -68,6 +71,7 @@ export class RateLimitWatcher {
         this.persistFn = options.persist;
         this.resolveResetAt = options.resolveResetAt;
         this.titleFor = options.titleFor;
+        this.workspaceFor = options.workspaceFor;
         this.warn = options.warn ?? ((message) => console.warn(`[dsh-minimax-usage] ${message}`));
     }
     /** Remember the provider of the latest LLM request for one Session. */
@@ -96,10 +100,11 @@ export class RateLimitWatcher {
         const errorAt = input.errorAt ?? now;
         const resetAt = this.resolveResetAt?.();
         const known = resetAt !== undefined && Number.isFinite(resetAt) && resetAt > now;
-        const sendAt = (known ? resetAt : now + FIVE_HOURS_MS) + RESET_REFRESH_DELAY_MS;
+        const sendAt = (known ? resetAt : now + FIVE_HOURS_MS) + CONTINUE_DELAY_MS;
         this.records.set(input.sessionId, {
             sessionId: input.sessionId,
             ...(input.title === undefined || input.title === "" ? {} : { title: input.title }),
+            ...(input.workspace === undefined || input.workspace === "" ? {} : { workspace: input.workspace }),
             provider: input.provider ?? providerForRegion(input.region),
             region: input.region,
             errorAt,
@@ -126,12 +131,17 @@ export class RateLimitWatcher {
             this.safePersist();
         return count;
     }
-    /** Browser-facing list, soonest delivery first, with fresh titles where available. */
+    /** Browser-facing list, soonest delivery first, with fresh titles/workspaces where available. */
     list() {
         const items = [];
         for (const record of this.records.values()) {
             const title = this.titleFor?.(record.sessionId);
-            items.push(title !== undefined && title !== "" ? { ...record, title } : { ...record });
+            const workspace = this.workspaceFor?.(record.sessionId);
+            items.push({
+                ...record,
+                ...(title === undefined || title === "" ? {} : { title }),
+                ...(workspace === undefined || workspace === "" ? {} : { workspace }),
+            });
         }
         items.sort((a, b) => a.sendAt - b.sendAt || a.sessionId.localeCompare(b.sessionId));
         return items;

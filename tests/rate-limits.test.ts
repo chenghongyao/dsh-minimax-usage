@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTINUE_DELAY_MS,
   DELIVERY_RETRY_MS,
   FIVE_HOURS_MS,
   HYDRATE_SEND_DELAY_MS,
@@ -8,7 +9,7 @@ import {
   RateLimitWatcher,
   providerForRegion,
 } from "../src/rate-limits.js";
-import { RESET_REFRESH_DELAY_MS, type Clock } from "../src/refresh.js";
+import { type Clock } from "../src/refresh.js";
 import type { RateLimitSessionView } from "../src/types.js";
 
 class FakeClock implements Clock {
@@ -63,6 +64,7 @@ function harness(options: {
   resetAt?: number;
   deliver?: (record: RateLimitSessionView) => Promise<void>;
   titleFor?: (sessionId: string) => string | undefined;
+  workspaceFor?: (sessionId: string) => string | undefined;
   clock?: FakeClock;
 } = {}): Harness {
   const clock = options.clock ?? new FakeClock();
@@ -80,6 +82,7 @@ function harness(options: {
     },
     resolveResetAt: () => options.resetAt,
     ...(options.titleFor === undefined ? {} : { titleFor: options.titleFor }),
+    ...(options.workspaceFor === undefined ? {} : { workspaceFor: options.workspaceFor }),
     warn: () => {},
   });
   return { clock, delivered, persisted, watcher };
@@ -122,11 +125,11 @@ describe("RateLimitWatcher", () => {
     record(h);
 
     expect(h.watcher.list()).toHaveLength(1);
-    expect(h.watcher.list()[0]?.sendAt).toBe(resetAt + RESET_REFRESH_DELAY_MS);
+    expect(h.watcher.list()[0]?.sendAt).toBe(resetAt + CONTINUE_DELAY_MS);
     expect(h.clock.live).toBe(1);
     expect(h.persisted.at(-1)).toHaveLength(1);
 
-    await h.clock.advance(resetAt + RESET_REFRESH_DELAY_MS - 1);
+    await h.clock.advance(resetAt + CONTINUE_DELAY_MS - 1);
     expect(h.delivered).toEqual([]);
     await h.clock.advance(1);
     expect(h.delivered).toEqual(["session-a"]);
@@ -137,9 +140,9 @@ describe("RateLimitWatcher", () => {
   it("falls back to a full 5h window when no reset time is known", async () => {
     const h = harness();
     record(h);
-    expect(h.watcher.list()[0]?.sendAt).toBe(FIVE_HOURS_MS + RESET_REFRESH_DELAY_MS);
+    expect(h.watcher.list()[0]?.sendAt).toBe(FIVE_HOURS_MS + CONTINUE_DELAY_MS);
 
-    await h.clock.advance(FIVE_HOURS_MS + RESET_REFRESH_DELAY_MS);
+    await h.clock.advance(FIVE_HOURS_MS + CONTINUE_DELAY_MS);
     expect(h.delivered).toEqual(["session-a"]);
   });
 
@@ -152,7 +155,7 @@ describe("RateLimitWatcher", () => {
 
     expect(h.watcher.list()).toHaveLength(1);
     expect(h.watcher.list()[0]?.errorAt).toBe(1000);
-    expect(h.watcher.list()[0]?.sendAt).toBe(60 * 60 * 1000 + RESET_REFRESH_DELAY_MS);
+    expect(h.watcher.list()[0]?.sendAt).toBe(60 * 60 * 1000 + CONTINUE_DELAY_MS);
     expect(h.clock.live).toBe(1);
     expect(first.sendAt).toBe(h.watcher.list()[0]?.sendAt);
   });
@@ -166,7 +169,7 @@ describe("RateLimitWatcher", () => {
 
     expect(h.watcher.remove("session-a")).toBe(true);
     expect(h.watcher.remove("session-a")).toBe(false);
-    await h.clock.advance(resetAt + RESET_REFRESH_DELAY_MS + 1);
+    await h.clock.advance(resetAt + CONTINUE_DELAY_MS + 1);
 
     expect(h.delivered).toEqual(["session-b"]);
     expect(h.watcher.list()).toEqual([]);
@@ -182,7 +185,7 @@ describe("RateLimitWatcher", () => {
     expect(h.watcher.clear()).toBe(3);
     expect(h.watcher.clear()).toBe(0);
     expect(h.clock.live).toBe(0);
-    await h.clock.advance(resetAt + RESET_REFRESH_DELAY_MS + 1);
+    await h.clock.advance(resetAt + CONTINUE_DELAY_MS + 1);
     expect(h.delivered).toEqual([]);
     expect(h.persisted.at(-1)).toEqual([]);
   });
@@ -241,7 +244,7 @@ describe("RateLimitWatcher", () => {
     });
     record(h);
 
-    await h.clock.advance(resetAt + RESET_REFRESH_DELAY_MS);
+    await h.clock.advance(resetAt + CONTINUE_DELAY_MS);
     expect(attempts).toBe(1);
     const pending = h.watcher.list()[0]!;
     expect(pending.attempts).toBe(1);
@@ -271,7 +274,7 @@ describe("RateLimitWatcher", () => {
     });
     watcher.record({ sessionId: "session-a", region: "cn" });
 
-    await clock.advance(resetAt + RESET_REFRESH_DELAY_MS);
+    await clock.advance(resetAt + CONTINUE_DELAY_MS);
     for (let attempt = 1; attempt < MAX_DELIVERY_ATTEMPTS; attempt += 1) {
       expect(watcher.list()).toHaveLength(1);
       await clock.advance(DELIVERY_RETRY_MS);
@@ -287,7 +290,7 @@ describe("RateLimitWatcher", () => {
     record(h);
     h.watcher.dispose();
 
-    await h.clock.advance(resetAt + RESET_REFRESH_DELAY_MS + 1);
+    await h.clock.advance(resetAt + CONTINUE_DELAY_MS + 1);
     expect(h.delivered).toEqual([]);
     expect(h.clock.live).toBe(0);
   });
@@ -305,6 +308,25 @@ describe("RateLimitWatcher", () => {
       },
     ]);
     expect(h.watcher.list()[0]?.title).toBe("live-session-a");
+  });
+
+  it("captures the workspace at record time and reports the live one on the list", () => {
+    const stored = harness();
+    stored.watcher.record({ sessionId: "session-a", region: "cn", workspace: "工作区 A" });
+    expect(stored.watcher.list()[0]?.workspace).toBe("工作区 A");
+
+    const live = harness({ workspaceFor: () => "工作区 B" });
+    live.watcher.hydrate([
+      {
+        sessionId: "session-a",
+        workspace: "工作区 A",
+        provider: "minimax-cn",
+        region: "cn",
+        errorAt: 0,
+        sendAt: 1000,
+      },
+    ]);
+    expect(live.watcher.list()[0]?.workspace).toBe("工作区 B");
   });
 
   it("remembers the last provider per Session", () => {

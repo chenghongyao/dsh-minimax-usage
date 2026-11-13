@@ -44,6 +44,8 @@ export interface UsageSnapshot {
 export interface RateLimitSessionView {
     sessionId: string;
     title?: string;
+    /** Display title of the Workspace that owns the Session. */
+    workspace?: string;
     provider: string;
     region: Region;
     /** When the rate-limit error was observed. */

@@ -112,6 +112,20 @@ export class UsageService {
         }
         return earliest;
     }
+    /**
+     * First configured region in the latest snapshot. Manually added Sessions
+     * inherit it so the panel can label the record without knowing the model.
+     */
+    preferredRegion() {
+        const snap = this.latest;
+        if (snap === undefined)
+            return undefined;
+        for (const account of snap.accounts) {
+            if (account.configured)
+                return account.region;
+        }
+        return undefined;
+    }
     dispose() {
         this.cache.clear();
         this.lastOk.clear();

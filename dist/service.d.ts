@@ -1,5 +1,5 @@
 import { type FetchLike } from "./fetch.js";
-import type { RefreshReason, UsageSnapshot } from "./types.js";
+import type { RefreshReason, Region, UsageSnapshot } from "./types.js";
 export interface UsageContext {
     get<T = unknown>(name: string): T | undefined;
 }
@@ -58,6 +58,11 @@ export declare class UsageService {
      * "继续" delivery.
      */
     nextResetAt(now?: number): number | undefined;
+    /**
+     * First configured region in the latest snapshot. Manually added Sessions
+     * inherit it so the panel can label the record without knowing the model.
+     */
+    preferredRegion(): Region | undefined;
     dispose(): void;
     private keys;
     private fetchAll;
