@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RefreshScheduler, type Clock } from "../src/refresh.js";
 import { apply } from "../src/index.js";
 
@@ -90,7 +92,11 @@ describe("apply", () => {
   it("registers its cleanup through the cordis effect scope and returns it", () => {
     const effects: Array<() => unknown> = [];
     const ctx = {
-      get: () => undefined,
+      // Keep the plugin's on-disk rate-limit store out of the real DSH home.
+      get: (name: string) =>
+        name === "dshHomePath"
+          ? (...segments: string[]) => join(tmpdir(), "dsh-minimax-usage-test", ...segments)
+          : undefined,
       on: () => () => {},
       inject: () => undefined,
       effect: (execute: () => unknown) => {

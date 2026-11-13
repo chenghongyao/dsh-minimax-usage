@@ -48,6 +48,23 @@ export interface UsageSnapshot {
    */
   phase?: "init" | "ready";
   accounts: AccountSnapshot[];
+  /** Sessions waiting for a post-rate-limit "继续" message. */
+  rateLimits?: RateLimitSessionView[];
+}
+
+/** One recorded Session that hit a MiniMax rate limit. */
+export interface RateLimitSessionView {
+  sessionId: string;
+  title?: string;
+  provider: string;
+  region: Region;
+  /** When the rate-limit error was observed. */
+  errorAt: number;
+  /** When the "继续" message is due (5h window end + reset grace). */
+  sendAt: number;
+  /** Failed delivery attempts so far. */
+  attempts?: number;
+  lastError?: string;
 }
 
 /** Structural face of `ctx.credentials` used by this plugin. */

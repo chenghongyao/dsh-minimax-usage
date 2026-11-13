@@ -104,6 +104,26 @@ export class UsageService {
     this.phase = "ready";
   }
 
+  /**
+   * End of the current 5-hour quota window, when the latest snapshot carries
+   * one that is still in the future. Used to time the post-rate-limit
+   * "继续" delivery.
+   */
+  nextResetAt(now = Date.now()): number | undefined {
+    const snap = this.latest;
+    if (snap === undefined) return undefined;
+    let earliest: number | undefined;
+    for (const account of snap.accounts) {
+      if (!account.ok) continue;
+      for (const model of account.models) {
+        const endAt = model.intervalEndAt;
+        if (endAt === undefined || endAt <= now) continue;
+        if (earliest === undefined || endAt < earliest) earliest = endAt;
+      }
+    }
+    return earliest;
+  }
+
   dispose(): void {
     this.cache.clear();
     this.lastOk.clear();

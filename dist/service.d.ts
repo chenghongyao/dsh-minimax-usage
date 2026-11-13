@@ -52,6 +52,12 @@ export declare class UsageService {
      * time; idempotent on an already-ready service.
      */
     markReady(): void;
+    /**
+     * End of the current 5-hour quota window, when the latest snapshot carries
+     * one that is still in the future. Used to time the post-rate-limit
+     * "继续" delivery.
+     */
+    nextResetAt(now?: number): number | undefined;
     dispose(): void;
     private keys;
     private fetchAll;

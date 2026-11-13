@@ -5,11 +5,20 @@
  * bundle layer. Zero runtime dependencies on `@deepseek-ai/*`: DSH services
  * are read through `ctx.get(...)` / `ctx.inject(...)`.
  */
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { CN_KEY_REF, GLOBAL_KEY_REF } from "./types.js";
 import { regionOfProvider, RefreshScheduler } from "./refresh.js";
+import { isRateLimitError, providerForRegion, RateLimitWatcher } from "./rate-limits.js";
 import { UsageService } from "./service.js";
 export const name = "dsh-minimax-usage";
 export const inject = [];
+/** Text sent to a Session once its 5h MiniMax quota window has reset. */
+const CONTINUE_TEXT = "继续";
+const STORE_DIR = "dsh-minimax-usage";
+const STORE_FILE = "rate-limits.json";
 /**
  * This MUST stay an arrow function. Cordis decides with `isConstructor(cb)` — true for
  * anything carrying a `prototype`, i.e. a plain `function` declaration or a class — and
@@ -28,6 +37,70 @@ export const apply = (ctx) => {
             return service.snapshot(force, reason);
         },
     });
+    const titleOf = (session) => {
+        if (session === undefined)
+            return undefined;
+        try {
+            const titles = context.get("sessionTitle");
+            const title = titles?.get?.(session)?.title;
+            return typeof title === "string" && title !== "" ? title : undefined;
+        }
+        catch {
+            return undefined;
+        }
+    };
+    const deliverContinue = async (record) => {
+        const agents = context.get("agents");
+        let agent = agents?.get?.(record.sessionId);
+        if (agent === undefined) {
+            const controller = context.get("sessionController");
+            if (controller?.resolveAgent === undefined) {
+                throw new Error("sessionController service is unavailable");
+            }
+            // `resolveAgent` resumes a Session that is not live after a Host restart.
+            const resolved = await controller.resolveAgent(record.sessionId);
+            if (resolved?.error !== undefined) {
+                throw new Error(resolved.error.message ?? "session is unavailable");
+            }
+            agent = resolved?.agent;
+        }
+        if (agent === undefined)
+            throw new Error(`session ${record.sessionId} has no live agent`);
+        if (typeof agent.followup !== "function") {
+            throw new Error(`session ${record.sessionId} cannot accept a follow-up message`);
+        }
+        agent.followup(continueMessage());
+        const sessions = context.get("sessions");
+        const session = agent.session;
+        if (sessions?.flush !== undefined && session !== undefined) {
+            try {
+                const acknowledged = await sessions.flush(session);
+                if (acknowledged === false) {
+                    console.warn("[dsh-minimax-usage] session persistence did not acknowledge 继续 delivery");
+                }
+            }
+            catch (error) {
+                console.warn(`[dsh-minimax-usage] failed to flush 继续 delivery: ${String(error)}`);
+            }
+        }
+    };
+    const storeFile = rateLimitStorePath(context);
+    const watcher = new RateLimitWatcher({
+        deliver: deliverContinue,
+        persist: (records) => {
+            void saveRateLimits(storeFile, records);
+        },
+        resolveResetAt: () => service.nextResetAt(),
+        titleFor: (sessionId) => {
+            const sessions = context.get("sessions");
+            return titleOf(sessions?.get?.(sessionId));
+        },
+    });
+    void loadRateLimits(storeFile)
+        .then((records) => watcher.hydrate(records))
+        .catch((error) => {
+        console.warn(`[dsh-minimax-usage] failed to load rate-limit records: ${String(error)}`);
+    });
     // Resolve the first usable snapshot before any /status request lands so the
     // Web UI never flashes the "unconfigured" error during the brief window in
     // which `dsh-credentials-local` is still loading `.credentials.yaml`.
@@ -44,6 +117,7 @@ export const apply = (ctx) => {
             const provider = optionsObject?.provider;
             const sessionId = typeof optionsObject?.sessionId === "string" ? optionsObject.sessionId : undefined;
             const region = regionOfProvider(provider);
+            watcher.observeProvider(sessionId, region, typeof provider === "string" ? provider : undefined);
             const auxiliary = optionsObject?.purpose === "compaction" || optionsObject?.purpose === "session-title";
             if (auxiliary) {
                 if (region !== undefined)
@@ -66,6 +140,36 @@ export const apply = (ctx) => {
             else if (status === "idle")
                 scheduler.onIdle(agentId);
         });
+        context.on("agent/error", (payload) => {
+            try {
+                const payloadObject = payload !== null && typeof payload === "object"
+                    ? payload
+                    : undefined;
+                if (!isRateLimitError(payloadObject?.error))
+                    return;
+                const agent = payloadObject?.agent;
+                const session = agent?.session;
+                const sessionId = session?.id;
+                if (typeof sessionId !== "string" || sessionId === "")
+                    return;
+                // Subagent Sessions are driven by their parent; do not inject work there.
+                if (session?.header?.origin === "subagent")
+                    return;
+                const observed = watcher.providerOf(sessionId);
+                if (observed?.region === undefined)
+                    return;
+                const title = titleOf(session);
+                watcher.record({
+                    sessionId,
+                    region: observed.region,
+                    provider: observed.provider ?? providerForRegion(observed.region),
+                    ...(title === undefined ? {} : { title }),
+                });
+            }
+            catch (error) {
+                console.warn(`[dsh-minimax-usage] failed to record a rate-limit session: ${String(error)}`);
+            }
+        });
         context.on("credentials/reference-updated", (ref) => {
             if (ref !== GLOBAL_KEY_REF && ref !== CN_KEY_REF)
                 return;
@@ -83,14 +187,28 @@ export const apply = (ctx) => {
                 kind: "exact",
                 path: "/minimax-usage/api/status",
                 handler: (req, res) => {
-                    void handleStatus(req, res, service, scheduler, false);
+                    void handleStatus(req, res, service, scheduler, watcher, false);
                 },
             });
             webServer.register({
                 kind: "exact",
                 path: "/minimax-usage/api/refresh",
                 handler: (req, res) => {
-                    void handleStatus(req, res, service, scheduler, true);
+                    void handleStatus(req, res, service, scheduler, watcher, true);
+                },
+            });
+            webServer.register({
+                kind: "exact",
+                path: "/minimax-usage/api/rate-limits/remove",
+                handler: (req, res) => {
+                    void handleRateLimitRemove(req, res, watcher);
+                },
+            });
+            webServer.register({
+                kind: "exact",
+                path: "/minimax-usage/api/rate-limits/clear",
+                handler: (req, res) => {
+                    void handleRateLimitClear(req, res, watcher);
                 },
             });
             console.log("[dsh-minimax-usage] inline usage indicator available on the Web UI");
@@ -100,6 +218,7 @@ export const apply = (ctx) => {
         console.warn("[dsh-minimax-usage] ctx.inject unavailable; Web UI disabled");
     }
     const dispose = () => {
+        watcher.dispose();
         scheduler.dispose();
         service.dispose();
     };
@@ -110,7 +229,23 @@ export const apply = (ctx) => {
         context.effect(() => dispose);
     return dispose;
 };
-async function handleStatus(req, res, service, scheduler, force) {
+/** One frozen user message carrying the continue prompt. */
+function continueMessage() {
+    return deepFreeze({
+        id: randomUUID(),
+        role: "user",
+        content: [{ type: "text", text: CONTINUE_TEXT }],
+        source: { kind: "user" },
+    });
+}
+function deepFreeze(value) {
+    if (value === null || typeof value !== "object")
+        return value;
+    for (const child of Object.values(value))
+        deepFreeze(child);
+    return Object.freeze(value);
+}
+async function handleStatus(req, res, service, scheduler, watcher, force) {
     const method = String(req.method ?? "GET").toUpperCase();
     if (force && method !== "POST" && method !== "GET") {
         sendJson(res, 405, { error: "method not allowed" });
@@ -121,14 +256,103 @@ async function handleStatus(req, res, service, scheduler, force) {
             await scheduler.refreshNow("manual");
         service.heartbeatMs = scheduler.heartbeatMs;
         const snapshot = await service.snapshot(false, force ? "manual" : "startup");
-        sendJson(res, 200, snapshot);
+        sendJson(res, 200, { ...snapshot, rateLimits: watcher.list() });
     }
     catch (err) {
         sendJson(res, 500, {
             fetchedAt: null,
             error: err instanceof Error ? err.message : String(err),
             accounts: [],
+            rateLimits: watcher.list(),
         });
+    }
+}
+async function handleRateLimitRemove(req, res, watcher) {
+    if (!requirePost(req, res))
+        return;
+    try {
+        const body = await readJsonBody(req);
+        const sessionId = body["sessionId"];
+        if (typeof sessionId !== "string" || sessionId === "") {
+            sendJson(res, 400, { error: "sessionId is required" });
+            return;
+        }
+        const removed = watcher.remove(sessionId);
+        sendJson(res, 200, { removed, rateLimits: watcher.list() });
+    }
+    catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+}
+async function handleRateLimitClear(req, res, watcher) {
+    if (!requirePost(req, res))
+        return;
+    try {
+        const cleared = watcher.clear();
+        sendJson(res, 200, { cleared, rateLimits: watcher.list() });
+    }
+    catch (error) {
+        sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+}
+function requirePost(req, res) {
+    const method = String(req.method ?? "GET").toUpperCase();
+    if (method === "POST")
+        return true;
+    sendJson(res, 405, { error: "method not allowed" });
+    return false;
+}
+async function readJsonBody(req) {
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of req) {
+        const buffer = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk);
+        total += buffer.length;
+        if (total > 8192)
+            throw new Error("request body too large");
+        chunks.push(buffer);
+    }
+    const text = Buffer.concat(chunks).toString("utf8").trim();
+    if (text === "")
+        return {};
+    const parsed = JSON.parse(text);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+        return {};
+    return parsed;
+}
+/** Data file under the DSH home; falls back to the default home when the service is absent. */
+function rateLimitStorePath(context) {
+    const homePath = context.get("dshHomePath");
+    if (typeof homePath === "function") {
+        try {
+            return homePath("data", STORE_DIR, STORE_FILE);
+        }
+        catch {
+            // Fall through to the default home.
+        }
+    }
+    return join(homedir(), ".dsh", "data", STORE_DIR, STORE_FILE);
+}
+async function loadRateLimits(file) {
+    try {
+        const text = await readFile(file, "utf8");
+        const parsed = JSON.parse(text);
+        if (!Array.isArray(parsed))
+            return [];
+        return parsed.filter((item) => item !== null && typeof item === "object");
+    }
+    catch {
+        // Missing file (first run) and unreadable JSON both start empty.
+        return [];
+    }
+}
+async function saveRateLimits(file, records) {
+    try {
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(file, `${JSON.stringify(records, null, 2)}\n`, "utf8");
+    }
+    catch (error) {
+        console.warn(`[dsh-minimax-usage] failed to persist rate-limit records: ${String(error)}`);
     }
 }
 function sendJson(res, status, body) {

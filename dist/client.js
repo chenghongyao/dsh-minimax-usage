@@ -70,6 +70,19 @@ window.__ModuleLoader__.load({
 			".mxu_inline_metric b{color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}",
 			".mxu_inline_hint{margin-top:10px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.06));color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px;line-height:1.45}",
 
+			// === rate-limited sessions: queued "继续" deliveries ===
+			".mxu_rl{margin-top:10px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.06))}",
+			".mxu_rl_head{display:flex;align-items:center;gap:8px;margin-bottom:4px}",
+			".mxu_rl_title{flex:1;min-width:0;color:var(--dsw-alias-label-secondary,rgba(255,255,255,.62));font-size:10.5px;font-weight:600;letter-spacing:.02em}",
+			".mxu_rl_clear{appearance:none;border:0;background:transparent;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font:inherit;font-size:10.5px;cursor:pointer;padding:2px 4px;border-radius:5px}",
+			".mxu_rl_clear:hover{color:var(--dsw-alias-state-error-primary,#fca5a5);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_item{display:flex;align-items:center;gap:8px;padding:3px 2px}",
+			".mxu_rl_item_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font-size:11px}",
+			".mxu_rl_item_when{flex:none;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px;font-variant-numeric:tabular-nums}",
+			".mxu_rl_del{appearance:none;flex:none;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font:inherit;font-size:13px;line-height:1;cursor:pointer;padding:0}",
+			".mxu_rl_del:hover{color:var(--dsw-alias-state-error-primary,#fca5a5);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
+			".mxu_rl_hint{margin-top:4px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10px;line-height:1.4}",
+
 			// === mobile: tap-toggled bottom sheet (iOS-style: large radius, sheet at bottom) ===
 			".mxu_inline_backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);z-index:999;opacity:0;pointer-events:none;transition:opacity .2s ease}",
 			".mxu_inline_backdrop.show{opacity:1;pointer-events:auto}",
@@ -159,6 +172,16 @@ window.__ModuleLoader__.load({
 			} catch {
 				return "";
 			}
+		}
+
+		function shortSession(id) {
+			if (typeof id !== "string") return "";
+			return id.length > 12 ? id.slice(-8) : id;
+		}
+
+		function sendWhen(sendAt) {
+			if (typeof sendAt !== "number" || Number.isNaN(sendAt)) return "";
+			return sendAt <= Date.now() ? "即将发送" : formatCountdown(sendAt, false) + "后";
 		}
 
 		function accountForSelection(accounts, region, modelId) {
@@ -262,6 +285,7 @@ window.__ModuleLoader__.load({
 
 		function DetailPanel(props) {
 			const accounts = Array.isArray(props.accounts) ? props.accounts : [];
+			const rateLimits = Array.isArray(props.rateLimits) ? props.rateLimits : [];
 			const data = props.data;
 			const loading = !data || data.phase === "init";
 			return createElement("div", { className: "mxu_inline_tip", role: "tooltip", id: props.id },
@@ -297,6 +321,32 @@ window.__ModuleLoader__.load({
 							: detailMetric("本周窗口", model.weeklyRemainingPercent, model.included, formatCountdown(model.weeklyEndAt)),
 					)),
 				)),
+				rateLimits.length > 0 ? createElement("div", { className: "mxu_rl" },
+					createElement("div", { className: "mxu_rl_head" },
+						createElement("span", { className: "mxu_rl_title" }, "限流后自动继续"),
+						createElement("button", {
+							type: "button",
+							className: "mxu_rl_clear",
+							onClick: () => {
+								if (props.onClearRateLimits) props.onClearRateLimits();
+							},
+						}, "清除全部"),
+					),
+					rateLimits.map((item) => createElement("div", { className: "mxu_rl_item", key: item.sessionId },
+						createElement("span", { className: "mxu_rl_item_name", title: item.sessionId }, item.title || shortSession(item.sessionId)),
+						createElement("span", { className: "mxu_rl_item_when" }, sendWhen(item.sendAt)),
+						createElement("button", {
+							type: "button",
+							className: "mxu_rl_del",
+							"aria-label": "不再向该会话发送继续消息",
+							onClick: (event) => {
+								if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+								if (props.onRemoveRateLimit) props.onRemoveRateLimit(item.sessionId);
+							},
+						}, "×"),
+					)),
+					createElement("div", { className: "mxu_rl_hint" }, "5 小时限额重置后自动发送「继续」"),
+				) : null,
 				createElement("div", { className: "mxu_inline_hint" }, "点击立即刷新 · 仅当前 MiniMax Token Plan provider 显示"),
 			);
 		}
@@ -335,6 +385,15 @@ window.__ModuleLoader__.load({
 			const disabled = region === undefined && lastGoodRegionRef.current === undefined;
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
+			const rateLimits = data && Array.isArray(data.rateLimits) ? data.rateLimits : [];
+			const removeRateLimit = react.useCallback((sessionId) => {
+				void api("/rate-limits/remove", { method: "POST", body: JSON.stringify({ sessionId }) })
+					.then(function () { return load(false); });
+			}, [load]);
+			const clearRateLimits = react.useCallback(function () {
+				void api("/rate-limits/clear", { method: "POST", body: JSON.stringify({}) })
+					.then(function () { return load(false); });
+			}, [load]);
 			const selected = disabled
 				? { account: undefined, model: undefined }
 				: accountForSelection(accounts, stableRegion, current && current.model);
@@ -365,7 +424,7 @@ window.__ModuleLoader__.load({
 			// 的前提下单独 update。
 			const panelRef = react.useRef(null);
 			const latestArgsRef = react.useRef(null);
-			latestArgsRef.current = { region, accounts, data, busy, closeMobile };
+			latestArgsRef.current = { region, accounts, data, busy, closeMobile, rateLimits, removeRateLimit, clearRateLimits };
 
 			react.useEffect(function () {
 				if (!usePortal) return undefined;
@@ -392,6 +451,9 @@ window.__ModuleLoader__.load({
 						data: args.data,
 						busy: args.busy,
 						onClose: args.closeMobile,
+						rateLimits: args.rateLimits,
+						onRemoveRateLimit: args.removeRateLimit,
+						onClearRateLimits: args.clearRateLimits,
 					});
 				};
 				renderInto(panel, latestArgsRef.current);
@@ -416,6 +478,9 @@ window.__ModuleLoader__.load({
 						data: latestArgsRef.current.data,
 						busy: latestArgsRef.current.busy,
 						onClose: latestArgsRef.current.closeMobile,
+						rateLimits: latestArgsRef.current.rateLimits,
+						onRemoveRateLimit: latestArgsRef.current.removeRateLimit,
+						onClearRateLimits: latestArgsRef.current.clearRateLimits,
 					});
 				};
 				renderInto(panelRef.current);
@@ -434,6 +499,9 @@ window.__ModuleLoader__.load({
 						data: latestArgsRef.current.data,
 						busy: latestArgsRef.current.busy,
 						onClose: latestArgsRef.current.closeMobile,
+						rateLimits: latestArgsRef.current.rateLimits,
+						onRemoveRateLimit: latestArgsRef.current.removeRateLimit,
+						onClearRateLimits: latestArgsRef.current.clearRateLimits,
 					});
 				}, 30000);
 				return () => clearInterval(tickId);
@@ -509,6 +577,9 @@ window.__ModuleLoader__.load({
 					accounts,
 					busy,
 					region,
+					rateLimits,
+					onRemoveRateLimit: removeRateLimit,
+					onClearRateLimits: clearRateLimits,
 				}) : null,
 			);
 		}
@@ -614,6 +685,56 @@ window.__ModuleLoader__.load({
 				});
 				root.appendChild(card);
 			});
+
+			// 限流后自动继续：记录中的会话列表（5 小时限额重置后自动发送「继续」）
+			const rateLimits = Array.isArray(opts.rateLimits) ? opts.rateLimits : [];
+			if (rateLimits.length > 0) {
+				const rl = document.createElement("div");
+				rl.className = "mxu_rl";
+				const rlHead = document.createElement("div");
+				rlHead.className = "mxu_rl_head";
+				const rlTitle = document.createElement("span");
+				rlTitle.className = "mxu_rl_title";
+				rlTitle.textContent = "限流后自动继续";
+				rlHead.appendChild(rlTitle);
+				const clearAll = document.createElement("button");
+				clearAll.type = "button";
+				clearAll.className = "mxu_rl_clear";
+				clearAll.textContent = "清除全部";
+				clearAll.addEventListener("click", function () {
+					if (typeof opts.onClearRateLimits === "function") opts.onClearRateLimits();
+				});
+				rlHead.appendChild(clearAll);
+				rl.appendChild(rlHead);
+				rateLimits.forEach(function (item) {
+					const row = document.createElement("div");
+					row.className = "mxu_rl_item";
+					const rowName = document.createElement("span");
+					rowName.className = "mxu_rl_item_name";
+					rowName.textContent = item.title || shortSession(item.sessionId);
+					rowName.title = item.sessionId;
+					row.appendChild(rowName);
+					const rowWhen = document.createElement("span");
+					rowWhen.className = "mxu_rl_item_when";
+					rowWhen.textContent = sendWhen(item.sendAt);
+					row.appendChild(rowWhen);
+					const del = document.createElement("button");
+					del.type = "button";
+					del.className = "mxu_rl_del";
+					del.textContent = "×";
+					del.setAttribute("aria-label", "不再向该会话发送继续消息");
+					del.addEventListener("click", function () {
+						if (typeof opts.onRemoveRateLimit === "function") opts.onRemoveRateLimit(item.sessionId);
+					});
+					row.appendChild(del);
+					rl.appendChild(row);
+				});
+				const rlHint = document.createElement("div");
+				rlHint.className = "mxu_rl_hint";
+				rlHint.textContent = "5 小时限额重置后自动发送「继续」";
+				rl.appendChild(rlHint);
+				root.appendChild(rl);
+			}
 
 			// 关闭按钮（移动端专用；使用 DSH 主蓝，保持与 DSH 整体视觉一致）
 			const close = document.createElement("button");
