@@ -89,15 +89,6 @@ export class UsageService {
     markReady() {
         this.phase = "ready";
     }
-    invalidate(region) {
-        if (region === undefined)
-            this.cache.clear();
-        else {
-            const peek = this.cache.peek(region);
-            if (peek !== undefined)
-                this.cache.set(region, peek.account, 0);
-        }
-    }
     dispose() {
         this.cache.clear();
         this.lastOk.clear();

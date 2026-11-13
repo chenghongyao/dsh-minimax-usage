@@ -138,7 +138,7 @@ window.__ModuleLoader__.load({
 			const hours = Math.floor((totalMin % (60 * 24)) / 60);
 			const mins = totalMin % 60;
 			if (compact) {
-				// Keep ≤5 chars so it fits in the 34px inline reset slot.
+				// Keep ≤5 chars so it fits in the 36px inline reset slot.
 				// Full precision still lives in the detail panel.
 				if (days > 0)       return days + "d" + hours + "h";             // 4 chars
 				if (hours >= 10)    return hours + "h";                            // 3 chars (e.g. "19h")
@@ -172,7 +172,7 @@ window.__ModuleLoader__.load({
 			return { account, model: exact || fallback };
 		}
 
-		function useUsage(enabled, region) {
+		function useUsage(enabled) {
 			const [data, setData] = react.useState(null);
 			const [busy, setBusy] = react.useState(false);
 			const [tick, setTick] = react.useState(0);
@@ -214,7 +214,6 @@ window.__ModuleLoader__.load({
 
 			// 轮询：每 15s 拉一次。region 变化不重启 timer —— 让 timer 一直跑。
 			react.useEffect(() => {
-				const POLL_MS = 15000;
 				let cancelled = false;
 				let timerId;
 				const tick = () => {
@@ -314,7 +313,7 @@ window.__ModuleLoader__.load({
 				? minimaxRegion(current && current.provider)
 				: undefined;
 			const enabled = region !== undefined;
-			const { data, busy, load, tick } = useUsage(enabled, region);
+			const { data, busy, load, tick } = useUsage(enabled);
 			void tick;
 			const [hovered, setHovered] = react.useState(false);
 			const [focused, setFocused] = react.useState(false);
@@ -517,7 +516,6 @@ window.__ModuleLoader__.load({
 		// 移动端详情面板的纯 DOM 渲染（不依赖 react-dom portal）
 		function buildMobileSheet(opts) {
 			const { host, region, accounts, data, busy, onClose } = opts;
-			const REGION_LABEL_LOC = REGION_LABEL;
 			const root = document.createElement("div");
 			root.style.cssText = "display:flex;flex-direction:column;gap:0";
 
@@ -530,7 +528,7 @@ window.__ModuleLoader__.load({
 			title.textContent = "MiniMax Token Plan";
 			const sub = document.createElement("div");
 			sub.className = "mxu_inline_tip_sub";
-			sub.textContent = REGION_LABEL_LOC[region] || "MiniMax";
+			sub.textContent = REGION_LABEL[region] || "MiniMax";
 			headLeft.appendChild(title);
 			headLeft.appendChild(sub);
 			head.appendChild(headLeft);
@@ -561,7 +559,7 @@ window.__ModuleLoader__.load({
 				cardHead.className = "mxu_inline_account_head";
 				const chip = document.createElement("span");
 				chip.className = "mxu_inline_chip";
-				chip.textContent = REGION_LABEL_LOC[acct.region] || acct.region;
+				chip.textContent = REGION_LABEL[acct.region] || acct.region;
 				cardHead.appendChild(chip);
 				const name = document.createElement("span");
 				name.className = "mxu_inline_account_name";

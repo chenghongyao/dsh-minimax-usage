@@ -93,7 +93,7 @@ export const apply = (ctx) => {
                     void handleStatus(req, res, service, scheduler, true);
                 },
             });
-            console.log("[dsh-minimax-usage] floating usage bubble available on the Web UI");
+            console.log("[dsh-minimax-usage] inline usage indicator available on the Web UI");
         });
     }
     else {

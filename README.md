@@ -25,7 +25,7 @@ npx @deepseek-ai/dsh plugin --profile web add dsh-minimax-usage
 锁定版本：
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:pan17/dsh-minimax-usage#v0.1.2
+npx @deepseek-ai/dsh plugin --profile web add github:pan17/dsh-minimax-usage#v0.1.8
 ```
 
 或默认分支最新：
@@ -54,6 +54,7 @@ allowBuilds:
 - **内联用量条**：显示在对话框模型选择器左侧，按截图样式显示 5h / 7d 两条剩余进度
 - **按 provider 显示**：只有当前选择 `minimax-cn` 或 `minimax` Token Plan provider 时显示；其他 provider 即使模型名含 MiniMax 也隐藏
 - **悬停详情**：鼠标悬停或键盘聚焦可查看国内站 / 国际站、套餐名、窗口进度和重置倒计时
+- **移动端底部面板**：窄屏下点击用量条展开底部用量面板（5h / 7d 进度与重置倒计时，每 30 秒刷新一次倒计时），点遮罩或"关闭"收起
 - **点击刷新**：点一下用量条强制刷新，不改变模型选择或发送操作
 - **密钥来源**：`MINIMAX_API_KEY`（国际）与 `MINIMAX_CN_API_KEY`（国内），优先 `ctx.credentials`，其次进程环境变量
 - **自动刷新**：只有实际运行中的 Agent 使用 `minimax` / `minimax-cn` Token Plan provider 时，才会每 30 秒强制拉取官方用量；切换到其他 provider 或 Agent 回到空闲后停止这条循环。整轮 Agent 回到空闲且这轮用过 MiniMax 后，再等 15 秒执行一次空闲刷新；之后心跳从 2 分钟起每次翻倍，上限 24 小时，再用 MiniMax 并空闲后心跳重置回 2 分钟。每轮快照还会按 5 小时窗口的重置时刻 + 30 秒再触发一次"重置后刷新"，第一时间拉取翻页后的额度。用量条每 15 秒只读 Host 缓存。点击立即强制刷新。
@@ -75,7 +76,7 @@ allowBuilds:
 
 ## 发布
 
-参见 [PUBLISH.md](./PUBLISH.md)：tag push 触发 GitHub Actions，自动 pack → GitHub Release → 等 CI 绿 → publish 到 npm。
+参见 [PUBLISH.md](./PUBLISH.md)：tag push 触发 GitHub Actions，先等 CI 绿灯，再创建 GitHub Release 并发布到 npm。
 
 ## 开发
 

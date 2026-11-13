@@ -71,6 +71,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
     scheduler.onIdle();
@@ -85,6 +86,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
     scheduler.heartbeatMs = 8 * 60 * 1000;
@@ -105,6 +107,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
     scheduler.markDirty("global");
@@ -121,6 +124,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
 
@@ -144,6 +148,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
 
@@ -160,6 +165,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
 
@@ -178,6 +184,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
 
@@ -198,6 +205,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
 
@@ -220,6 +228,7 @@ describe("RefreshScheduler", () => {
     const scheduler = new RefreshScheduler({
       snapshot: async (_force, reason) => {
         reasons.push(reason);
+        return undefined;
       },
     }, clock);
     await clock.advance(HEARTBEAT_MIN_MS);

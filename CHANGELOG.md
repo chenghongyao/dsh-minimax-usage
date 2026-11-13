@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- 移动端点击用量条展开底部用量面板：显示 5h / 7d 窗口进度与重置倒计时，每 30 秒刷新一次倒计时，点遮罩或"关闭"收起
+
+### Changed
+
+- 移动端面板按 DSH 主题重做样式，按钮收窄到 102px；套餐没有 7d 额度时整行隐藏
+- 仓库内提交预构建的 `dist/`，从 GitHub source 安装时不再触发构建（移除 `prepare` 钩子）
+
+### Fixed
+
+- 修复宿主进程无法退出导致 DSH 桌面端更新失败：`apply` 改为不可构造的箭头函数，并通过 `ctx.effect` 注册清理；`RefreshScheduler.dispose()` 变为粘性，dispose 后不再重新挂载计时器
+- 移动端面板在 data / region 变化时不再重建 DOM（消除闪烁），首次加载不再先闪"未配置"，provider 短暂不是 MiniMax 时不再清空数据或隐藏指示器
+
 ## [0.1.8] - 2026-09-05
 
 ### Changed

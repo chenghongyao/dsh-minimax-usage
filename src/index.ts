@@ -112,7 +112,7 @@ export const apply = (ctx: unknown): (() => void) => {
           void handleStatus(req, res, service, scheduler, true);
         },
       });
-      console.log("[dsh-minimax-usage] floating usage bubble available on the Web UI");
+      console.log("[dsh-minimax-usage] inline usage indicator available on the Web UI");
     });
   } else {
     console.warn("[dsh-minimax-usage] ctx.inject unavailable; Web UI disabled");

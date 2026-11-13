@@ -1,5 +1,5 @@
 import { type FetchLike } from "./fetch.js";
-import type { RefreshReason, Region, UsageSnapshot } from "./types.js";
+import type { RefreshReason, UsageSnapshot } from "./types.js";
 export interface UsageContext {
     get<T = unknown>(name: string): T | undefined;
 }
@@ -52,7 +52,6 @@ export declare class UsageService {
      * time; idempotent on an already-ready service.
      */
     markReady(): void;
-    invalidate(region?: Region): void;
     dispose(): void;
     private keys;
     private fetchAll;
