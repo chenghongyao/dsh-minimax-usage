@@ -29,7 +29,6 @@ window.__ModuleLoader__.load({
 			".mxu_inline:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3,#3b82f6)}",
 			".mxu_inline:active{transform:scale(.98)}",
 			".mxu_inline[data-busy=true]{background:var(--dsw-alias-interactive-bg-active,rgba(59,130,246,.12))}",
-			".mxu_inline_disabled{opacity:.5;cursor:default}",
 			".mxu_inline_rows{display:inline-flex;flex-direction:column;align-items:stretch;justify-content:center;gap:3px;width:100%}",
 			".mxu_inline_line{display:inline-flex;align-items:center;gap:4px;width:100%;height:6px}",
 			".mxu_inline_label{display:inline-block;width:18px;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:9px;font-weight:600;line-height:10px;text-align:right;letter-spacing:.01em;flex:none}",
@@ -450,19 +449,16 @@ window.__ModuleLoader__.load({
 			const [expanded, setExpanded] = react.useState(false);
 			const tooltipId = react.useId();
 
-			// 用 ref 记录"上一次成功的 region"。如果 enabled 短暂翻成 false（例如
-			// mobile 切后台后 DSH 在 microtask 里重置 directory 再回 ready），我们继续
-			// 用上一次的 region 显示数据，而不是切到 "—" 占位——后者会被肉眼看到
-			// 一次闪烁。视觉上：稳定有数据 → 稳定有数据，从不抖。
+			// 记住最近一次 MiniMax region，用来跨过 directory 的瞬时非 ready 抖动
+			// （mobile 切后台等情况）：此时沿用上一次的 region 渲染数据。
 			const lastGoodRegionRef = react.useRef(region);
 			if (region !== undefined) lastGoodRegionRef.current = region;
 			const stableRegion = region !== undefined ? region : lastGoodRegionRef.current;
-			// disabled 仅在 enabled 一直是 false 时才显示占位（第一次挂载时），
-			// 曾经是 minimax provider 又短暂翻成非时仍按 enabled=true 渲染。
-			// 关键：disabled 是 stateful 的——一旦用户曾见到过数据，就不再 disabled。
-			// 这避免了 useSyncExternalStore 在 microtask 里反复切换 status 导致的
-			// "数据 ↔ 占位" 闪烁。
-			const disabled = region === undefined && lastGoodRegionRef.current === undefined;
+			// 按钮只在当前模型是 MiniMax Token Plan provider 时显示。directory 已 ready
+			// 且 provider 不是 MiniMax 时直接返回 null（不渲染占位）；directory 尚未 ready
+			// 的瞬时状态沿用上一次的判断，避免加载/切后台时按钮闪烁。
+			const directoryReady = directoryState !== undefined && directoryState.status === "ready";
+			const visible = directoryReady ? region !== undefined : lastGoodRegionRef.current !== undefined;
 
 			const accounts = data && Array.isArray(data.accounts) ? data.accounts : [];
 			const rateLimits = data && Array.isArray(data.rateLimits) ? data.rateLimits : [];
@@ -514,24 +510,20 @@ window.__ModuleLoader__.load({
 					cancelled = true;
 				};
 			}, [pickerOpen]);
-			const selected = disabled
-				? { account: undefined, model: undefined }
-				: accountForSelection(accounts, stableRegion, current && current.model);
+			const selected = accountForSelection(accounts, stableRegion, current && current.model);
 			const account = selected.account;
 			const model = selected.model;
 			const loading = !data || data.phase === "init";
 			const error = (account && account.error) || (data && data.error);
 			const intervalEndAt = model && model.intervalEndAt;
 			const weeklyEndAt = model && model.weeklyEndAt;
-			const summary = disabled
-				? "MiniMax Token Plan：当前模型不是 MiniMax Token Plan"
-				: loading
-					? "MiniMax Token Plan 用量读取中"
-					: error && !model
-						? "MiniMax Token Plan 用量异常：" + error
-						: "MiniMax " + (REGION_LABEL[stableRegion] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
+			const summary = loading
+				? "MiniMax Token Plan 用量读取中"
+				: error && !model
+					? "MiniMax Token Plan 用量异常：" + error
+					: "MiniMax " + (REGION_LABEL[stableRegion] || "") + "：5h 剩余 " + formatPercent(model && model.intervalRemainingPercent) + "（" + formatCountdown(intervalEndAt, true) + "重置），7d 剩余 " + formatPercent(model && model.weeklyRemainingPercent) + "（" + formatCountdown(weeklyEndAt, true) + "重置）；点击展开详情";
 			const showDesktopTooltip = hovered || focused;
-			const showExpanded = expanded;
+			const showExpanded = expanded && visible;
 			const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width:640px)").matches;
 
 			// 移动端：把详情面板 portal 到 document.body，彻底脱离 slot 容器的 transform/overflow 陷阱
@@ -648,31 +640,32 @@ window.__ModuleLoader__.load({
 				return () => clearInterval(tickId);
 			}, [usePortal]);
 
+			// 切到非 MiniMax provider 时收起可能还开着的移动端面板。
+			react.useEffect(function () {
+				if (!visible) setExpanded(false);
+			}, [visible]);
+
+			if (!visible) return null;
+
 			return createElement("span", {
 				className: "mxu_inline_host",
 				"data-minimax-usage": "true",
 				"data-minimax-usage-provider": current && current.provider,
 				"data-minimax-usage-region": region,
-				"data-minimax-usage-disabled": disabled ? "true" : "false",
 				"data-minimax-usage-region-hist": lastGoodRegionRef.current || "none",
 				onMouseEnter: () => setHovered(true),
 				onMouseLeave: () => setHovered(false),
 			},
 				createElement("button", {
 					type: "button",
-					// 关键：button 的 DOM `disabled` 属性永远设为 false，让 React/浏览器
-					// 不把这个 button 当不可交互重建。disabled 状态用 CSS（半透明 + 默认
-					// 光标）和 onClick 守卫来表达。
-					className: "mxu_inline" + (disabled ? " mxu_inline_disabled" : ""),
+					className: "mxu_inline",
 					"aria-label": summary,
 					"aria-busy": busy || loading ? "true" : "false",
 					"aria-describedby": showDesktopTooltip ? tooltipId : undefined,
 					"aria-expanded": showExpanded ? "true" : (showDesktopTooltip ? "true" : "false"),
 					title: summary,
 					"data-busy": busy ? "true" : undefined,
-					"data-disabled": disabled ? "true" : undefined,
 					onClick: () => {
-						if (disabled) return;
 						setExpanded((v) => !v);
 						void load(true);
 					},
@@ -680,39 +673,28 @@ window.__ModuleLoader__.load({
 					onBlur: () => setFocused(false),
 				},
 					createElement("span", { className: "mxu_inline_rows" },
-						disabled
-							? createElement("span", {
-								className: "mxu_inline_line",
-								style: { justifyContent: "center", color: "var(--dsw-alias-label-tertiary, rgba(255,255,255,.35))" },
-							},
-								createElement("span", {
-									style: { fontSize: "10px", fontWeight: 500 },
-								}, current && current.provider
-									? "—" 
-									: "…"),
-							)
+						createElement(CompactQuotaLine, {
+							label: "5h",
+							percent: model && model.intervalRemainingPercent,
+							included: model && model.included,
+							loading,
+							reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
+						}),
+						// 7d 行：套餐未提供 weekly 字段时（model.weeklyRemainingPercent 与
+						// model.weeklyRemainsTimeMs 都为 undefined）整行不渲染。
+						model && (model.weeklyRemainingPercent === undefined && model.weeklyRemainsTimeMs === undefined)
+							? null
 							: createElement(CompactQuotaLine, {
-								label: "5h",
-								percent: model && model.intervalRemainingPercent,
+								label: "7d",
+								percent: model && model.weeklyRemainingPercent,
 								included: model && model.included,
 								loading,
-								reset: intervalEndAt ? formatCountdown(intervalEndAt, true) : "",
+								reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
 							}),
-						// 7d 行：套餐未提供 weekly 字段时（model.weeklyRemainingPercent 与
-							// model.weeklyRemainsTimeMs 都为 undefined）整行不渲染。
-							disabled || (model && (model.weeklyRemainingPercent === undefined && model.weeklyRemainsTimeMs === undefined))
-								? null
-								: createElement(CompactQuotaLine, {
-									label: "7d",
-									percent: model && model.weeklyRemainingPercent,
-									included: model && model.included,
-									loading,
-									reset: weeklyEndAt ? formatCountdown(weeklyEndAt, true) : "",
-								}),
 					),
 				),
-				// 桌面：仍走 React 子树渲染浮窗（disabled 时不响应）
-				!isMobile && showDesktopTooltip && !disabled ? createElement(DetailPanel, {
+				// 桌面：仍走 React 子树渲染浮窗
+				!isMobile && showDesktopTooltip ? createElement(DetailPanel, {
 					id: tooltipId,
 					data,
 					accounts,

@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- 当前模型不是 MiniMax Token Plan provider 时完全隐藏用量按钮（此前会显示一个占位符）
 - 修复宿主进程无法退出导致 DSH 桌面端更新失败：`apply` 改为不可构造的箭头函数，并通过 `ctx.effect` 注册清理；`RefreshScheduler.dispose()` 变为粘性，dispose 后不再重新挂载计时器
 - 移动端面板在 data / region 变化时不再重建 DOM（消除闪烁），首次加载不再先闪"未配置"，provider 短暂不是 MiniMax 时不再清空数据或隐藏指示器
 
