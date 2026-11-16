@@ -52,6 +52,8 @@ export interface RateLimitSessionView {
     errorAt: number;
     /** When the "继续" message is due (5h window end + reset grace). */
     sendAt: number;
+    /** True when the recorded Session is a subagent child Session. */
+    subagent?: boolean;
     /** Failed delivery attempts so far. */
     attempts?: number;
     lastError?: string;

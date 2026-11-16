@@ -5,18 +5,16 @@
  * bundle layer. Zero runtime dependencies on `@deepseek-ai/*`: DSH services
  * are read through `ctx.get(...)` / `ctx.inject(...)`.
  */
-import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { CN_KEY_REF, GLOBAL_KEY_REF } from "./types.js";
 import { regionOfProvider, RefreshScheduler } from "./refresh.js";
 import { isRateLimitError, providerForRegion, RateLimitWatcher } from "./rate-limits.js";
+import { createContinueDelivery } from "./delivery.js";
 import { UsageService } from "./service.js";
 export const name = "dsh-minimax-usage";
 export const inject = [];
-/** Text sent to a Session once its 5h MiniMax quota window has reset. */
-const CONTINUE_TEXT = "继续";
 const STORE_DIR = "dsh-minimax-usage";
 const STORE_FILE = "rate-limits.json";
 /**
@@ -142,44 +140,9 @@ export const apply = (ctx) => {
         const live = context.get("sessions")?.get?.(sessionId);
         return live === undefined ? undefined : candidateOf(sessionId, titleOf(live));
     };
-    const deliverContinue = async (record) => {
-        const agents = context.get("agents");
-        let agent = agents?.get?.(record.sessionId);
-        if (agent === undefined) {
-            const controller = context.get("sessionController");
-            if (controller?.resolveAgent === undefined) {
-                throw new Error("sessionController service is unavailable");
-            }
-            // `resolveAgent` resumes a Session that is not live after a Host restart.
-            const resolved = await controller.resolveAgent(record.sessionId);
-            if (resolved?.error !== undefined) {
-                throw new Error(resolved.error.message ?? "session is unavailable");
-            }
-            agent = resolved?.agent;
-        }
-        if (agent === undefined)
-            throw new Error(`session ${record.sessionId} has no live agent`);
-        if (typeof agent.followup !== "function") {
-            throw new Error(`session ${record.sessionId} cannot accept a follow-up message`);
-        }
-        agent.followup(continueMessage());
-        const sessions = context.get("sessions");
-        const session = agent.session;
-        if (sessions?.flush !== undefined && session !== undefined) {
-            try {
-                const acknowledged = await sessions.flush(session);
-                if (acknowledged === false) {
-                    console.warn("[dsh-minimax-usage] session persistence did not acknowledge 继续 delivery");
-                }
-            }
-            catch (error) {
-                console.warn(`[dsh-minimax-usage] failed to flush 继续 delivery: ${String(error)}`);
-            }
-        }
-    };
     const storeFile = rateLimitStorePath(context);
     const watcher = new RateLimitWatcher({
-        deliver: deliverContinue,
+        deliver: createContinueDelivery(context),
         persist: (records) => {
             void saveRateLimits(storeFile, records);
         },
@@ -246,18 +209,21 @@ export const apply = (ctx) => {
                 const sessionId = session?.id;
                 if (typeof sessionId !== "string" || sessionId === "")
                     return;
-                // Subagent Sessions are driven by their parent; do not inject work there.
-                if (session?.header?.origin === "subagent")
-                    return;
                 const observed = watcher.providerOf(sessionId);
                 if (observed?.region === undefined)
                     return;
+                const subagent = session?.header?.origin === "subagent";
+                const parent = session?.header?.parentSession;
+                const parentSessionId = typeof parent === "string" && parent !== "" ? parent : undefined;
                 const title = titleOf(session);
-                const workspace = workspaceOf(sessionId);
+                // Subagent child Sessions are usually not accounted by a Workspace, so
+                // inherit the owning parent's Workspace for the panel row.
+                const workspace = workspaceOf(sessionId) ?? (parentSessionId === undefined ? undefined : workspaceOf(parentSessionId));
                 watcher.record({
                     sessionId,
                     region: observed.region,
                     provider: observed.provider ?? providerForRegion(observed.region),
+                    ...(subagent ? { subagent: true } : {}),
                     ...(title === undefined ? {} : { title }),
                     ...(workspace === undefined ? {} : { workspace }),
                 });
@@ -344,22 +310,6 @@ export const apply = (ctx) => {
         context.effect(() => dispose);
     return dispose;
 };
-/** One frozen user message carrying the continue prompt. */
-function continueMessage() {
-    return deepFreeze({
-        id: randomUUID(),
-        role: "user",
-        content: [{ type: "text", text: CONTINUE_TEXT }],
-        source: { kind: "user" },
-    });
-}
-function deepFreeze(value) {
-    if (value === null || typeof value !== "object")
-        return value;
-    for (const child of Object.values(value))
-        deepFreeze(child);
-    return Object.freeze(value);
-}
 async function handleStatus(req, res, service, scheduler, watcher, force) {
     const method = String(req.method ?? "GET").toUpperCase();
     if (force && method !== "POST" && method !== "GET") {

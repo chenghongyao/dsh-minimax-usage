@@ -78,6 +78,7 @@ window.__ModuleLoader__.load({
 			".mxu_rl_item{display:flex;align-items:center;gap:8px;padding:3px 2px}",
 			".mxu_rl_item_name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary,rgba(255,255,255,.92));font-size:11px}",
 			".mxu_rl_item_ws{flex:none;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 5px;border-radius:5px;background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.05));color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10px}",
+			".mxu_rl_subagent{flex:none;padding:0 5px;border-radius:5px;background:var(--dsw-alias-state-info-bg,rgba(59,130,246,.12));color:var(--dsw-alias-state-info-primary,#93c5fd);font-size:9.5px;line-height:1.5}",
 			".mxu_rl_item_when{flex:none;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font-size:10.5px;font-variant-numeric:tabular-nums}",
 			".mxu_rl_del{appearance:none;flex:none;width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary,rgba(255,255,255,.45));font:inherit;font-size:13px;line-height:1;cursor:pointer;padding:0}",
 			".mxu_rl_del:hover{color:var(--dsw-alias-state-error-primary,#fca5a5);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}",
@@ -378,6 +379,7 @@ window.__ModuleLoader__.load({
 						? createElement("div", { className: "mxu_rl_empty" }, "暂无记录，点「添加」选择现有会话")
 						: rateLimits.map((item) => createElement("div", { className: "mxu_rl_item", key: item.sessionId },
 							createElement("span", { className: "mxu_rl_item_name", title: item.sessionId }, item.title || shortSession(item.sessionId)),
+							item.subagent ? createElement("span", { className: "mxu_rl_subagent" }, "子代理") : null,
 							item.workspace ? createElement("span", { className: "mxu_rl_item_ws", title: item.workspace }, item.workspace) : null,
 							createElement("span", { className: "mxu_rl_item_when" }, sendWhen(item.sendAt)),
 							createElement("button", {
@@ -859,6 +861,12 @@ window.__ModuleLoader__.load({
 				rowName.textContent = item.title || shortSession(item.sessionId);
 				rowName.title = item.sessionId;
 				row.appendChild(rowName);
+				if (item.subagent) {
+					const rowSub = document.createElement("span");
+					rowSub.className = "mxu_rl_subagent";
+					rowSub.textContent = "子代理";
+					row.appendChild(rowSub);
+				}
 				if (item.workspace) {
 					const rowWs = document.createElement("span");
 					rowWs.className = "mxu_rl_item_ws";

@@ -34,6 +34,7 @@ export interface RateLimitWatcherOptions {
 export declare function isRateLimitError(error: unknown): boolean;
 /** Provider id reported for one region. */
 export declare function providerForRegion(region: Region): string;
+export declare function isPermanentDeliveryError(error: unknown): boolean;
 /**
  * Records Sessions that hit a MiniMax rate limit and delivers one `继续`
  * message to each of them after its 5h window resets.
@@ -70,6 +71,7 @@ export declare class RateLimitWatcher {
         workspace?: string;
         provider?: string;
         region: Region;
+        subagent?: boolean;
         errorAt?: number;
     }): void;
     /** Remove one Session record; it will never receive the `继续` message. */

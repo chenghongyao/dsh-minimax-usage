@@ -5,6 +5,7 @@ import {
   FIVE_HOURS_MS,
   HYDRATE_SEND_DELAY_MS,
   MAX_DELIVERY_ATTEMPTS,
+  isPermanentDeliveryError,
   isRateLimitError,
   RateLimitWatcher,
   providerForRegion,
@@ -336,5 +337,50 @@ describe("RateLimitWatcher", () => {
     h.watcher.observeProvider("session-a", undefined, "grok");
     expect(h.watcher.providerOf("session-a")).toEqual({ provider: "grok" });
     expect(h.watcher.providerOf("missing")).toBeUndefined();
+  });
+});
+
+describe("isPermanentDeliveryError", () => {
+  it("recognizes unrecoverable subagent failures", () => {
+    expect(isPermanentDeliveryError({ code: "NOT_RESUMABLE" })).toBe(true);
+    expect(isPermanentDeliveryError({ code: "INPUT_CLOSED" })).toBe(true);
+    expect(isPermanentDeliveryError({ code: "UNAUTHORIZED" })).toBe(true);
+  });
+
+  it("keeps transient failures retryable", () => {
+    expect(isPermanentDeliveryError(new Error("temporarily unavailable"))).toBe(false);
+    expect(isPermanentDeliveryError({ code: "ACTIVATION_CLOSING" })).toBe(false);
+    expect(isPermanentDeliveryError(null)).toBe(false);
+  });
+});
+
+describe("RateLimitWatcher delivery outcomes", () => {
+  it("marks a recorded subagent Session", () => {
+    const h = harness();
+    h.watcher.record({ sessionId: "session-a", region: "cn", subagent: true });
+    expect(h.watcher.list()[0]?.subagent).toBe(true);
+  });
+
+  it("drops a record when the delivery failure is permanent", async () => {
+    const resetAt = 60 * 60 * 1000;
+    const warnings: string[] = [];
+    const clock = new FakeClock();
+    const watcher = new RateLimitWatcher({
+      clock,
+      deliver: async () => {
+        throw Object.assign(new Error("subagent has no continuation state"), { code: "NOT_RESUMABLE" });
+      },
+      persist: () => {},
+      resolveResetAt: () => resetAt,
+      warn: (message) => {
+        warnings.push(message);
+      },
+    });
+    watcher.record({ sessionId: "session-a", region: "cn", subagent: true });
+
+    await clock.advance(resetAt + CONTINUE_DELAY_MS);
+    expect(watcher.list()).toEqual([]);
+    expect(clock.live).toBe(0);
+    expect(warnings.some((message) => message.includes("dropping the record"))).toBe(true);
   });
 });

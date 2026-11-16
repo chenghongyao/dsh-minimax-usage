@@ -166,6 +166,34 @@ describe("rate-limit wiring", () => {
     }
   });
 
+  it("records subagent Sessions and inherits the parent Workspace", async () => {
+    const wiring = boot({
+      dshHomePath: (...segments: string[]) => join(dir, ...segments),
+      workspaceRegistry: {
+        list: () => [{ id: "ws-1", title: "工作区 X", path: "/work/x", sessionIds: ["session-parent"] }],
+      },
+    });
+    try {
+      wiring.emit("llm/stream", { provider: "minimax-cn", sessionId: "sub-1" }, () => "chunk");
+      wiring.emit("agent/error", {
+        agent: {
+          session: { id: "sub-1", header: { origin: "subagent", parentSession: "session-parent" } },
+          followup: () => {},
+        },
+        error: { code: "RATE_LIMIT" },
+      });
+
+      const status = await callRoute(wiring, "/minimax-usage/api/status", { method: "GET" });
+      const rateLimits = status.body["rateLimits"] as Array<Record<string, unknown>>;
+      expect(rateLimits).toHaveLength(1);
+      expect(rateLimits[0]?.["sessionId"]).toBe("sub-1");
+      expect(rateLimits[0]?.["subagent"]).toBe(true);
+      expect(rateLimits[0]?.["workspace"]).toBe("工作区 X");
+    } finally {
+      wiring.dispose();
+    }
+  });
+
   it("ignores non-MiniMax and non-rate-limit errors", async () => {
     const wiring = boot({ dshHomePath: (...segments: string[]) => join(dir, ...segments) });
     try {

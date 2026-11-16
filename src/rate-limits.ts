@@ -79,6 +79,25 @@ export function providerForRegion(region: Region): string {
 }
 
 /**
+ * Delivery failures that will never succeed on a retry: the target subagent
+ * cannot be resumed (one-shot/closed/foreign tree) or its persistence layer is
+ * missing. Retrying only spams the log, so the watcher drops the record.
+ */
+const PERMANENT_DELIVERY_CODES = new Set([
+  "NOT_RESUMABLE",
+  "UNAUTHORIZED",
+  "INPUT_CLOSED",
+  "PERSISTENCE_UNAVAILABLE",
+  "CONTINUATION_UNAVAILABLE",
+]);
+
+export function isPermanentDeliveryError(error: unknown): boolean {
+  if (error === null || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && PERMANENT_DELIVERY_CODES.has(code);
+}
+
+/**
  * Records Sessions that hit a MiniMax rate limit and delivers one `继续`
  * message to each of them after its 5h window resets.
  *
@@ -135,6 +154,7 @@ export class RateLimitWatcher {
     workspace?: string;
     provider?: string;
     region: Region;
+    subagent?: boolean;
     errorAt?: number;
   }): void {
     if (this.disposed || input.sessionId === "") return;
@@ -149,6 +169,7 @@ export class RateLimitWatcher {
       ...(input.workspace === undefined || input.workspace === "" ? {} : { workspace: input.workspace }),
       provider: input.provider ?? providerForRegion(input.region),
       region: input.region,
+      ...(input.subagent === true ? { subagent: true } : {}),
       errorAt,
       sendAt,
     });
@@ -235,8 +256,14 @@ export class RateLimitWatcher {
       this.safePersist();
     } catch (error) {
       if (this.disposed) return;
-      const attempts = (record.attempts ?? 0) + 1;
       const message = error instanceof Error ? error.message : String(error);
+      if (isPermanentDeliveryError(error)) {
+        this.records.delete(sessionId);
+        this.safePersist();
+        this.warn(`cannot deliver "继续" to session ${sessionId}: ${message}; dropping the record`);
+        return;
+      }
+      const attempts = (record.attempts ?? 0) + 1;
       if (attempts >= MAX_DELIVERY_ATTEMPTS) {
         this.records.delete(sessionId);
         this.safePersist();
